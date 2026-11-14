@@ -1,0 +1,1655 @@
+/*
+   Copyright (c) 2026, The MoneroUSD Protocol
+
+   This file is an original work of the MoneroUSD Protocol — a post-quantum,
+   GHOSTDAG block-DAG, zero-knowledge confidential-value protocol. It is NOT part
+   of the Monero Project. Licensed under the Apache License, Version 2.0
+   (SPDX-License-Identifier: Apache-2.0); see the LICENSE and NOTICE files at the
+   repository root.
+*/
+
+/* theme.css — MoneroUSD Explorer
+ *
+ * Phantom-style wallet aesthetic with the Monero brand palette
+ * (deep matte black + orange #FF6600 accent). Matches the
+ * desktop wallet's home, governance, settings, and the IDE so
+ * the entire surface family reads as one product.
+ *
+ * Design tokens live on :root. Component rules below cascade
+ * off them — change a token, every component follows.
+ */
+
+:root {
+  /* ─── Brand & palette ─────────────────────────────────────── */
+  --monero-orange:        #FF6600;
+  --monero-orange-soft:   rgba(255, 102, 0, 0.10);
+  --monero-orange-rim:    rgba(255, 102, 0, 0.32);
+  --monero-orange-hover:  #FF8533;
+  --monero-orange-press:  #E65800;
+
+  /* ─── Surfaces (deepest → most-elevated) ──────────────────── */
+  --bg-base:        #050505;
+  --bg-page:        #0a0a0a;
+  --bg-surface:     #111;
+  --bg-elevated:    #161616;
+  --bg-popover:     #1c1c1c;
+  --bg-hover:       rgba(255, 255, 255, 0.04);
+
+  /* ─── Glass card (Phantom feel) ──────────────────────────── */
+  --glass-bg:       linear-gradient(180deg,
+                      rgba(255, 255, 255, 0.04) 0%,
+                      rgba(255, 255, 255, 0.015) 100%);
+  --glass-border:   rgba(255, 255, 255, 0.08);
+  --glass-border-active: rgba(255, 102, 0, 0.30);
+  --card-shadow:    0 2px 8px rgba(0, 0, 0, 0.35),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --card-shadow-hover:
+                    0 8px 24px rgba(0, 0, 0, 0.5),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* ─── Hero gradient (orange radial halo over dark base) ───── */
+  --hero-gradient:  radial-gradient(circle at 20% 0%,
+                      rgba(255, 102, 0, 0.18) 0%,
+                      rgba(255, 102, 0, 0.04) 35%,
+                      rgba(20, 20, 20, 0) 70%),
+                    linear-gradient(180deg, #141414 0%, #0a0a0a 100%);
+  --hero-border:    rgba(255, 102, 0, 0.22);
+
+  /* ─── Borders ─────────────────────────────────────────────── */
+  --border-subtle:  rgba(255, 255, 255, 0.06);
+  --border-strong:  rgba(255, 255, 255, 0.12);
+  --row-divider:    rgba(255, 255, 255, 0.05);
+
+  /* ─── Text ────────────────────────────────────────────────── */
+  --text-primary:   #f7f7f7;
+  --text-secondary: #b5b5b5;
+  --text-muted:     #6f6f6f;
+  --text-faint:     #4d4d4d;
+  --text-inverse:   #0a0a0a;
+  --accent:         var(--monero-orange);
+  --accent-hover:   var(--monero-orange-hover);
+
+  /* ─── Semantic colors ─────────────────────────────────────── */
+  --success:        #22c55e;
+  --success-soft:   rgba(34, 197, 94, 0.12);
+  --warning:        #f59e0b;
+  --warning-soft:   rgba(245, 158, 11, 0.12);
+  --danger:         #ef4444;
+  --danger-soft:    rgba(239, 68, 68, 0.12);
+  --info:           #38bdf8;
+  --info-soft:      rgba(56, 189, 248, 0.12);
+
+  /* ─── Geometry ────────────────────────────────────────────── */
+  --radius-xs:      4px;
+  --radius-sm:      6px;
+  --radius-md:      10px;
+  --radius-lg:      14px;
+  --radius-xl:      18px;
+  --radius-pill:    9999px;
+  --pill-radius:    9999px;
+
+  /* ─── Type ────────────────────────────────────────────────── */
+  --font-ui:        'Inter', -apple-system, BlinkMacSystemFont,
+                    'Segoe UI', system-ui, sans-serif;
+  --font-mono:      'JetBrains Mono', ui-monospace, 'SF Mono',
+                    Menlo, Monaco, Consolas, monospace;
+
+  /* ─── Motion ──────────────────────────────────────────────── */
+  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-med:  180ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ─── Container widths ───────────────────────────────────── */
+  --container-max:   1240px;
+  --header-h:        64px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Reset + base
+ * ════════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 80% -10%, rgba(255, 102, 0, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at -10% 30%, rgba(255, 102, 0, 0.04) 0%, transparent 40%),
+    var(--bg-page);
+  background-attachment: fixed;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+a:hover { color: var(--accent-hover); }
+
+code, .mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+button {
+  font-family: inherit;
+}
+
+h1, h2, h3, h4, h5 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.35rem; }
+h3 { font-size: 1.1rem; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Layout
+ * ════════════════════════════════════════════════════════════════════ */
+
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+main.container { padding-top: 24px; padding-bottom: 64px; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Header (sticky glass top bar)
+ *
+ * Selector is scoped to `body > header` so it ONLY matches the
+ * top-bar (a direct child of <body>). Page-level `<header>`
+ * elements — like the `<header class="hero">` used by every
+ * landing page — pick up the .hero rule instead of inheriting
+ * the top-bar's fixed height. (Pre-fix: `header { height: 64px }`
+ * collapsed every page hero to a 56-px sliver on mobile.)
+ * ════════════════════════════════════════════════════════════════════ */
+
+body > header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: var(--header-h);
+  background: rgba(10, 10, 10, 0.78);
+  border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: saturate(1.5) blur(18px);
+  -webkit-backdrop-filter: saturate(1.5) blur(18px);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 18px;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.logo:hover { color: var(--text-primary); }
+
+.logo-mark {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 12px rgba(255, 102, 0, 0.45));
+  transition: filter var(--transition-med);
+}
+.logo:hover .logo-mark {
+  filter: drop-shadow(0 0 16px rgba(255, 102, 0, 0.7));
+}
+.logo-sub {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+  /* No `margin-right: auto` — we want the search bar to take the
+     remaining space, NOT the nav to push everything else right. */
+}
+.header-nav::-webkit-scrollbar { display: none; }
+
+.header-nav-link {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.header-nav-link:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.header-nav-link.active {
+  color: var(--accent);
+  background: var(--monero-orange-soft);
+}
+
+/* ─── Search (header) ─────────────────────────────────────────────── */
+
+.search-form {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  /* Desktop: large pill that takes the full available width up to
+     the breakpoint. Phantom-app sized — the bar should feel like
+     the page's primary input, not a tiny accessory. */
+  max-width: 680px;
+  min-width: 280px;
+}
+
+.search-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+#search-input {
+  width: 100%;
+  height: 44px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 0 18px 0 44px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+#search-input::placeholder { color: var(--text-muted); font-weight: 400; }
+#search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(255, 102, 0, 0.04);
+  box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.12);
+}
+
+.search-wrapper::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translateY(-50%);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%236f6f6f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='M21 21l-4.35-4.35'/></svg>");
+  pointer-events: none;
+}
+
+#search-btn { display: none; /* Enter to submit; Phantom-style */ }
+
+/* ─── Search dropdown (live results w/ logos) ───────────────────── */
+
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  background: var(--bg-popover);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.65),
+              inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  /* Match the bar's width on mobile/tablet, but DROP the right anchor
+     on desktop so the panel can extend wider than the input — useful
+     when the search shows long org/token names. */
+  min-width: 100%;
+  width: max-content;
+  max-width: min(680px, calc(100vw - 32px));
+  max-height: 540px;
+  overflow-y: auto;
+  display: none;
+  z-index: 200;
+  padding: 6px;
+}
+.search-dropdown.open { display: block; }
+
+.search-section-title {
+  padding: 12px 12px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-muted);
+}
+
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
+}
+.search-result:hover,
+.search-result.active {
+  background: var(--monero-orange-soft);
+}
+.search-result-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--monero-orange-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.search-result-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.search-result-text {
+  flex: 1;
+  min-width: 0;
+}
+.search-result-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.25;
+}
+.search-result-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-result-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Source pill (connection status) */
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid rgba(34, 197, 94, 0.30);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.source-pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+.source-pill.connecting {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: rgba(245, 158, 11, 0.30);
+}
+.source-pill.connecting::before {
+  background: var(--warning);
+  box-shadow: 0 0 8px var(--warning);
+}
+.source-pill.error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: rgba(239, 68, 68, 0.30);
+}
+.source-pill.error::before {
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
+
+/* Network switch (Mainnet / Testnet) — path-prefix routing.
+   Testnet lives at explorer.monerousd.org/testnet, so switching is a
+   real navigation to /testnet/ (handled in app.js). */
+.network-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  flex-shrink: 0;
+}
+.network-switch select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 28px;
+  margin: 0;
+  padding: 0 26px 0 11px;
+  border-radius: var(--radius-pill);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  outline: none;
+  transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+.network-switch select:hover { color: var(--text-primary); border-color: var(--accent); }
+.network-switch select:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,102,0,0.25); }
+.network-switch-caret {
+  position: absolute;
+  right: 9px;
+  width: 11px;
+  height: 11px;
+  pointer-events: none;
+  color: var(--text-muted);
+}
+/* On testnet the switch is unmistakably orange-accented. */
+.network-switch.testnet select {
+  color: var(--accent);
+  background: rgba(255, 102, 0, 0.12);
+  border-color: rgba(255, 102, 0, 0.45);
+}
+.network-switch.testnet .network-switch-caret { color: var(--accent); }
+
+/* Thin testnet banner under the header. */
+.testnet-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 18px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: rgba(255, 102, 0, 0.10);
+  border-bottom: 1px solid rgba(255, 102, 0, 0.30);
+}
+.testnet-banner[hidden] { display: none; }
+.testnet-banner strong { color: var(--accent); font-weight: 700; letter-spacing: 0.02em; }
+.testnet-banner code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.05);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+}
+.testnet-banner-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  flex-shrink: 0;
+}
+.testnet-banner-exit {
+  margin-left: auto;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.testnet-banner-exit:hover { text-decoration: underline; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Hero (home page)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.hero {
+  position: relative;
+  background: var(--hero-gradient);
+  border: 1px solid var(--hero-border);
+  border-radius: var(--radius-xl);
+  padding: 36px 38px 32px;
+  margin-bottom: 24px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35),
+              inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -60%;
+  right: -10%;
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, rgba(255, 102, 0, 0.18) 0%, transparent 60%);
+  pointer-events: none;
+}
+.hero-eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin-bottom: 10px;
+  position: relative;
+}
+.hero h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+  position: relative;
+}
+.hero p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  max-width: 620px;
+  line-height: 1.6;
+  position: relative;
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+  position: relative;
+}
+.hero-stat {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+.hero-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.hero-stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.hero-stat-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Glass card (used by every section that isn't the hero)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow);
+  padding: 22px;
+  margin-bottom: 18px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.card.interactive:hover {
+  border-color: var(--glass-border-active);
+  box-shadow: var(--card-shadow-hover);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.card-header h2,
+.card-header h3 { margin: 0; }
+.card-action {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-action a { color: var(--accent); }
+.card-action[role="button"],
+.card-action.clickable,
+.card-action#txs-action,
+.card-action#blocks-action {
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.card-action#txs-action:hover,
+.card-action#blocks-action:hover { color: var(--accent); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Stats grid (used by Validators / Reserve / Network pages)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.stat-tile {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  position: relative;
+}
+.stat-tile::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+.stat-tile-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.stat-tile-value {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+.stat-tile-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Table (recent blocks, recent txs, tokens, contracts, etc.)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.table-wrap { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+thead th {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--row-divider);
+}
+tbody td {
+  padding: 12px;
+  border-bottom: 1px solid var(--row-divider);
+  color: var(--text-primary);
+}
+tbody tr {
+  transition: background var(--transition-fast);
+}
+tbody tr:hover { background: var(--bg-hover); }
+tbody tr:last-child td { border-bottom: none; }
+
+td.num,
+th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+td.mono,
+.mono { font-family: var(--font-mono); }
+
+.copyable, .mono { cursor: pointer; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Pagination row (older blocks button etc.)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.pager-info {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Pills, badges
+ * ════════════════════════════════════════════════════════════════════ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.badge-verified {
+  background: var(--monero-orange-soft);
+  color: var(--accent);
+  border: 1px solid var(--monero-orange-rim);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Gold verified check (Twitter/X-gold style).
+ *
+ * Render a 16-pointed star burst with a metallic-gold radial gradient
+ * + a white checkmark inside. The component is an inline SVG icon
+ * (.gold-check) — use it INSTEAD OF a "verified" text badge wherever
+ * we mark a verified org / token / wrapped asset / NFT collection /
+ * dapp / sovereign site as official.
+ *
+ * Sizes: default 14px (next to small text). The `--lg` modifier is
+ * 18px for hero / detail-head headings. `--xl` is 22px for the
+ * organization-profile and token-detail hero treatments.
+ *
+ * Accessibility: every usage wraps a visually-hidden text span
+ * (.sr-only) so screen readers still announce "verified".
+ * ════════════════════════════════════════════════════════════════════ */
+
+.gold-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  vertical-align: -2px;
+  filter: drop-shadow(0 0 4px rgba(212, 175, 55, 0.45));
+  transition: filter var(--transition-fast);
+}
+.gold-check:hover { filter: drop-shadow(0 0 6px rgba(255, 200, 60, 0.7)); }
+.gold-check.gold-check--lg { width: 18px; height: 18px; vertical-align: -3px; }
+.gold-check.gold-check--xl { width: 22px; height: 22px; vertical-align: -4px; }
+.gold-check svg { width: 100%; height: 100%; display: block; }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+.badge-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.badge-success {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.badge-info {
+  background: var(--info-soft);
+  color: var(--info);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+.badge-muted {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Buttons
+ * ════════════════════════════════════════════════════════════════════ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--transition-fast),
+              border-color var(--transition-fast),
+              filter var(--transition-fast),
+              transform var(--transition-fast);
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--accent);
+}
+.btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  transform: translateY(-1px);
+}
+.btn-primary:active { transform: translateY(0); }
+.btn-primary[disabled] {
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  border-color: var(--border-subtle);
+  cursor: not-allowed;
+  transform: none;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.btn-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--monero-orange-soft);
+}
+.btn-ghost[disabled] {
+  border-color: var(--border-subtle);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+.btn-sm { height: 30px; padding: 0 12px; font-size: 12px; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Token / NFT / Org card grids
+ * ════════════════════════════════════════════════════════════════════ */
+
+.entity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.entity-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), transform var(--transition-fast),
+              box-shadow var(--transition-fast);
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+.entity-card:hover {
+  border-color: var(--glass-border-active);
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-hover);
+}
+.entity-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.entity-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--monero-orange-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.entity-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.entity-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.entity-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.entity-body {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.entity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.entity-meta strong { color: var(--text-primary); font-weight: 600; }
+
+/* ────────────────────────────────────────────────────────────────
+ * Sovereign-site cards (pages/sites.js).
+ *
+ * Each card is its own composite: header (logo + title row), blurb,
+ * actions (Open ↗ / Anchor / By <org>). We DON'T nest <a> tags
+ * inside one another — the parent click target is a `<a class="site-card-head">`
+ * that covers the head row only; the action buttons are explicit
+ * `<button>` / `<a>` so they capture clicks first.
+ * ──────────────────────────────────────────────────────────────── */
+
+.site-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color var(--transition-fast),
+              transform var(--transition-fast),
+              box-shadow var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+.site-card:hover {
+  border-color: var(--glass-border-active);
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-hover);
+}
+.site-card--verified::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--monero-orange) 50%, transparent 100%);
+  opacity: 0.5;
+}
+
+.site-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: inherit;
+}
+.site-card-head:hover .site-card-domain { color: var(--accent); }
+
+.site-card-title {
+  flex: 1;
+  min-width: 0;
+}
+.site-card-domain {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  transition: color var(--transition-fast);
+}
+.site-card-version {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.site-card-blurb {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin: 0;
+}
+.site-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+.site-card-by {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+.site-card-by:hover {
+  color: var(--accent);
+  border-color: var(--monero-orange-rim);
+  background: var(--monero-orange-soft);
+}
+
+@media (max-width: 640px) {
+  .site-card { padding: 14px; }
+  .site-card-actions { gap: 6px; }
+}
+
+/* Filter chips inside listing pages */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.filter-chip:hover {
+  border-color: var(--monero-orange-rim);
+  color: var(--text-primary);
+}
+.filter-chip.active {
+  background: var(--monero-orange-soft);
+  color: var(--accent);
+  border-color: var(--monero-orange-rim);
+}
+.filter-chip .count {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Legacy class shims (tokens.js / contracts.js / tx.js use these).
+ * ════════════════════════════════════════════════════════════════════ */
+
+.muted, .text-muted { color: var(--text-muted); }
+.token-search { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; max-width: 420px; }
+.token-search input,
+.token-search .input {
+  flex: 1;
+  height: 34px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 0 14px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.token-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255,102,0,0.10);
+}
+.token-search button {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--text-inverse);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.token-search button:hover { background: var(--accent-hover); }
+
+.badge-supply-fixed       { background: var(--info-soft);    color: var(--info);    border: 1px solid rgba(56,189,248,0.30); }
+.badge-supply-mintable    { background: var(--warning-soft); color: var(--warning); border: 1px solid rgba(245,158,11,0.30); }
+.badge-supply-burnable    { background: var(--success-soft); color: var(--success); border: 1px solid rgba(34,197,94,0.30); }
+.badge-supply-mintable-burnable { background: var(--monero-orange-soft); color: var(--accent); border: 1px solid var(--monero-orange-rim); }
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.info-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+.info-card .label,
+.info-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  display: block;
+}
+.info-card .value,
+.info-card-value {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.panel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  margin-bottom: 18px;
+}
+
+.tx-link {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Empty + error states
+ * ════════════════════════════════════════════════════════════════════ */
+
+.empty, .loading {
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty code { color: var(--accent); }
+.hint {
+  margin-top: 14px;
+  font-size: 0.9rem;
+}
+
+.error-box {
+  background: var(--danger-soft);
+  border: 1px solid rgba(239, 68, 68, 0.30);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  color: var(--text-primary);
+}
+.error-box strong {
+  display: block;
+  color: var(--danger);
+  margin-bottom: 4px;
+}
+.error-box p { margin: 0; font-size: 13px; color: var(--text-secondary); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Detail view (key/value layout, used by /tx, /block, /token, /org)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.detail-head .entity-logo { width: 56px; height: 56px; font-size: 18px; }
+.detail-head h1 { margin: 0; }
+.detail-head .entity-sub { font-size: 13px; }
+
+.kv-table {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 10px 24px;
+  font-size: 13px;
+}
+.kv-table dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-top: 2px;
+}
+.kv-table dd {
+  margin: 0;
+  color: var(--text-primary);
+  /* Don't break in the middle of words for prose. The legacy
+     `word-break: break-all` was great for 64-char hashes but
+     fragmented normal sentences ("FC / MP++", "co / ncealed",
+     etc) on narrow viewports. Hashes / token-ids get the
+     aggressive break via the .mono override below. */
+  overflow-wrap: anywhere;
+  word-break: normal;
+  min-width: 0;
+}
+.kv-table dd.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  /* Force aggressive break for hashes / tokenIds (no natural
+     word boundaries to land on). */
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Privacy primitives explainer (educational page)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.privacy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.privacy-col h3 {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.privacy-pill {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+.privacy-pill.concealed {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.privacy-pill.public {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.privacy-list { padding-left: 18px; margin: 0; }
+.privacy-list li {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.privacy-list li strong { color: var(--text-primary); font-weight: 600; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Footer
+ * ════════════════════════════════════════════════════════════════════ */
+
+footer {
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(10, 10, 10, 0.6);
+  margin-top: 64px;
+  padding: 18px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+footer a { color: var(--accent); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Responsive
+ * ════════════════════════════════════════════════════════════════════ */
+
+/* Aggressive nav collapse so the search bar always gets ≥ 400 px
+   of real estate. .collapse-md hides Contracts / Sites / Validators
+   / Privacy by default below 1340 px (typical 13" laptop width). */
+@media (max-width: 1340px) {
+  .header-nav .header-nav-link.collapse-md { display: none; }
+}
+@media (max-width: 1080px) {
+  /* Tighter padding so the still-visible links don't squeeze the
+     search bar below its natural width. */
+  .header-nav-link { padding: 0 9px; font-size: 12px; }
+  .logo span:not(.logo-sub):not(.brand-mark) { font-size: 14px; }
+}
+
+@media (max-width: 880px) {
+  :root { --header-h: 60px; }
+  .container { padding: 0 16px; }
+  .header-inner { gap: 10px; }
+  .header-nav { display: none; }
+  .search-form { max-width: none; min-width: 0; }
+  #search-input { height: 40px; font-size: 13px; padding-left: 40px; }
+  .search-wrapper::before { width: 16px; height: 16px; left: 14px; }
+  .search-dropdown { max-width: calc(100vw - 32px); max-height: 60vh; }
+  .hero { padding: 26px 22px 22px; border-radius: var(--radius-lg); }
+  .hero h1 { font-size: 1.4rem; }
+  .hero p { font-size: 13px; }
+  .privacy-grid { grid-template-columns: 1fr; }
+  /* On phones the 2-column kv-table squeezes long prose. Stack
+     dt/dd vertically — label on its own row, value full-width —
+     so sentences and hashes both have the full content area to
+     wrap into. */
+  .kv-table {
+    grid-template-columns: 1fr;
+    gap: 4px 0;
+    margin-bottom: 0;
+  }
+  .kv-table dt {
+    padding-top: 12px;
+    border-top: 1px solid var(--row-divider);
+    margin-top: 4px;
+  }
+  .kv-table > dt:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+  .kv-table dd { padding-bottom: 4px; }
+}
+
+@media (max-width: 640px) {
+  .logo-sub { display: none; }
+  .source-pill { display: none; }
+  table { font-size: 12px; }
+  thead th, tbody td { padding: 9px 8px; }
+  .entity-grid { grid-template-columns: 1fr; }
+  .detail-head .entity-logo { width: 44px; height: 44px; font-size: 14px; }
+  .hero-stats { grid-template-columns: 1fr 1fr; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Mobile bottom nav (replaces the hidden header nav on phones)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(10, 10, 10, 0.92);
+  border-top: 1px solid var(--border-subtle);
+  backdrop-filter: saturate(1.5) blur(16px);
+  -webkit-backdrop-filter: saturate(1.5) blur(16px);
+  z-index: 90;
+  padding: 6px 8px env(safe-area-inset-bottom, 6px);
+}
+.mobile-nav-inner {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  overflow-x: auto;
+  gap: 4px;
+}
+.mobile-nav-link {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 4px 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  gap: 2px;
+  text-decoration: none;
+  border-radius: var(--radius-md);
+}
+.mobile-nav-link svg {
+  width: 18px;
+  height: 18px;
+}
+.mobile-nav-link.active {
+  color: var(--accent);
+  background: var(--monero-orange-soft);
+}
+
+@media (max-width: 880px) {
+  .mobile-nav { display: block; }
+  main.container { padding-bottom: 80px; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Scroll reveal animations (matching monerousd.org site.js)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.rv {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity .8s cubic-bezier(.16,1,.3,1),
+              transform .8s cubic-bezier(.16,1,.3,1);
+}
+.rv.in {
+  opacity: 1;
+  transform: none;
+}
+.rv.delay-1 { transition-delay: .1s; }
+.rv.delay-2 { transition-delay: .2s; }
+.rv.delay-3 { transition-delay: .3s; }
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 12px rgba(255,102,0,0.2); }
+  50%      { box-shadow: 0 0 24px rgba(255,102,0,0.4); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv { opacity: 1 !important; transform: none !important; transition: none !important; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Hero canvas backdrop (DAG flow behind the hero)
+ * ════════════════════════════════════════════════════════════════════ */
+
+.hero { position: relative; overflow: hidden; }
+
+.hero-dag-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero-eyebrow,
+.hero h1,
+.hero p,
+.hero-stats,
+.hero-cta-row { position: relative; z-index: 1; }
+
+/* ─── Enhanced hero stat tiles (glow + animation) ──────────────── */
+
+.hero-stat {
+  transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+.hero-stat:hover {
+  border-color: var(--monero-orange-rim);
+  box-shadow: 0 0 20px rgba(255,102,0,0.15);
+  transform: translateY(-2px);
+}
+.hero-stat-value {
+  background: linear-gradient(135deg, var(--text-primary) 40%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── CTA row (hero buttons) ──────────────────────────────────── */
+
+.hero-cta-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 14px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+  text-decoration: none;
+}
+.hero-cta:hover { transform: translateY(-1px); }
+.hero-cta-primary {
+  background: linear-gradient(180deg, #ff8a1f, #f06a00);
+  color: #fff;
+  box-shadow: 0 8px 30px rgba(255,122,0,.28);
+}
+.hero-cta-primary:hover { color: #fff; }
+.hero-cta-ghost {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: rgba(255,255,255,.03);
+}
+
+/* ─── Pill row (hero feature tags) ────────────────────────────── */
+
+.hero-pills {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,.025);
+}
+.hero-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+  box-shadow: 0 0 8px rgba(255,102,0,0.5);
+}
+
+/* ─── Entity grid enhancements ────────────────────────────────── */
+
+.entity-card {
+  transition: border-color .2s, transform .2s, box-shadow .2s;
+}
+.entity-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+}
+
+/* ─── DAG showcase card ──────────────────────────────────────── */
+
+.dag-showcase {
+  position: relative;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255,102,0,0.1), transparent 60%),
+              var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  margin-bottom: 18px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, box-shadow .2s;
+  overflow: hidden;
+}
+.dag-showcase:hover {
+  border-color: var(--monero-orange-rim);
+  box-shadow: 0 12px 40px rgba(255,102,0,0.12);
+}
+.dag-showcase h2 {
+  margin-bottom: 8px;
+}
+.dag-showcase p {
+  color: var(--text-secondary);
+  max-width: 480px;
+  margin: 0 auto 18px;
+  font-size: 14px;
+}
+.dag-showcase-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ff8a1f, #f06a00);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  box-shadow: 0 6px 20px rgba(255,122,0,0.25);
+  transition: transform .15s;
+}
+.dag-showcase-cta:hover { transform: translateY(-1px); color: #fff; }
