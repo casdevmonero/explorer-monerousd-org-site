@@ -5,183 +5,142 @@
 // zero-knowledge confidential-value protocol. It is NOT part of the Monero Project. Licensed under
 // the Apache License, Version 2.0; see the LICENSE and NOTICE files at the repository root.
 
-// pages/usernames.js — confidential username market (#77/#78/#80/#81).
+// pages/usernames.js — @names: look one up, see whether it is free and what it costs to claim (the chain's own price
+// for the bytes every node keeps), claim it through the wallet, and browse the names claimed most recently.
 //
-// MoneroUSD usernames are TRADEABLE handles whose ownership lives in an
-// indexed-Merkle-tree (IMT) of HIDING commitments:
-//
-//     uname_cm = Poseidon2( DS_USERNAME || name || owner_pk )
-//
-// Only the IMT *root* is on chain. The (name ↔ owner) mapping is never
-// derivable from chain data — registering, transferring, or owning a
-// handle leaks nothing about WHICH name or WHO owns it. That is the whole
-// point vs a classical public name registry (e.g. ENS / the old Ion
-// attestation registry), where handle→owner is world-readable.
-//
-// This page is therefore deliberately metadata-thin: it can prove that
-// the market EXISTS and is live (claimed-name count, the threaded root,
-// the post-quantum ZK consensus rule), but it CANNOT — and must not be
-// able to — list names or owners. Showing it couldn't is the privacy
-// audit (#82) made visible.
-//
-// Data source: the daemon's own /get_pq_username_tree handler, reached
-// through the SAME decentralization-respecting multi-RPC failover as the
-// other PQ reads — no single-operator indexer, no trust root.
+// A @name is opt-in public: it points at a receive address its owner chose to publish. Paying a @name stays private
+// (the payer's wallet asks the name's wallet for a one-time address). This page never lists which address a name
+// points to; it says only whether the name is held.
 
-export async function renderUsernames(ctx) {
-  const { view, ds, H } = ctx;
-  const esc = (s) => (H && H.escapeHtml ? H.escapeHtml(String(s ?? '')) : String(s ?? ''));
+import * as chain from '../lib/chain.js';
+import { escapeHtml as esc } from '../lib/helpers.js';
+import { connectPanel, toast } from './common.js';
 
-  view.innerHTML = '<div class="loading">Loading the username market…</div>';
+const NAME_OK = /^[a-z0-9_.-]{1,32}$/;
 
-  // Live IMT state (fail-soft: a wedged/unreachable daemon must not wedge
-  // the page — no-halts. We render the explainer either way and just show
-  // "—" for the live figures).
-  let tree = null;
-  try { tree = await ds.getPqUsernameTreeSafe(); } catch (_) { tree = null; }
-
-  const live    = !!(tree && (tree.status === undefined || tree.status === 'OK'));
-  const count   = live && tree.count  != null ? Number(tree.count)  : null;
-  const depth   = live && tree.depth  != null ? Number(tree.depth)  : 32;
-  const rootHex = live && tree.root_hex       ? String(tree.root_hex)       : '';
-  const emptyHex= live && tree.empty_root_hex ? String(tree.empty_root_hex) : '';
-  // An IMT that still equals its empty root has had zero registrations.
-  const isEmpty = rootHex && emptyHex && rootHex === emptyHex;
-  const claimed = count == null ? null : count;            // # of uname_cm leaves
-  const capacity = `2^${depth}`;                          // sparse-IMT slot capacity
-
-  const fmtRoot = (h) => h ? `${h.slice(0, 10)}…${h.slice(-8)}` : '—';
-  const fmtNum  = (n) => n == null ? '—' : (H && H.fmtInt ? H.fmtInt(n) : n.toLocaleString());
-
+export async function renderUsernames({ ds, view }, initial) {
   view.innerHTML = `
-    <header class="hero" style="padding:30px 32px">
-      <span class="hero-eyebrow">Username market</span>
-      <h1 style="font-size:1.7rem">Confidential, tradeable @handles</h1>
-      <p>A username on MoneroUSD is a <strong>tradeable</strong> handle — but unlike every
-        classical name registry, the mapping from <code>@name</code> to its owner is
-        <strong>never on chain</strong>. Ownership lives in an indexed-Merkle-tree of
-        <em>hiding</em> commitments; the chain holds only the tree's root. Registering,
-        transferring, or holding a handle reveals nothing about which name it is or who
-        owns it. This page can show the market is <strong>live</strong> — it cannot show
-        you the names, because nobody can.</p>
+    <header class="hero rv">
+      <span class="kick">@names</span>
+      <h1>Your name on MoneroUSD. <span class="or">Paid to, privately.</span></h1>
+      <p>A @name lets anyone pay you without copying an address. It is public by choice; the payments to it stay
+        private — each payer’s wallet gets a fresh one-time address from yours.</p>
+      <form class="name-search" id="name-form" autocomplete="off">
+        <span class="at">@</span>
+        <input id="name-input" maxlength="33" spellcheck="false" placeholder="yourname" aria-label="A name to look up" value="${esc(chain.canonName(initial || ''))}">
+        <button class="btn btn-primary" type="submit">Look up</button>
+      </form>
+      <div id="name-result"></div>
     </header>
-
-    <section class="stat-grid">
-      <div class="stat-tile">
-        <div class="stat-tile-label">Names claimed</div>
-        <div class="stat-tile-value">${claimed == null ? '—' : fmtNum(claimed)}</div>
-        <div class="stat-tile-sub">${isEmpty ? 'market open — none yet' : 'hiding uname_cm leaves'}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-tile-label">IMT depth</div>
-        <div class="stat-tile-value">${esc(depth)}</div>
-        <div class="stat-tile-sub">capacity ${esc(capacity)} handles</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-tile-label">Threaded root</div>
-        <div class="stat-tile-value mono" style="font-size:0.95rem" title="${esc(rootHex)}">${esc(fmtRoot(rootHex))}</div>
-        <div class="stat-tile-sub">current username-IMT root</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-tile-label">Consensus</div>
-        <div class="stat-tile-value" style="font-size:1.0rem">PQ&nbsp;ZK&nbsp;STARK</div>
-        <div class="stat-tile-sub">post-quantum, ≤1.8&nbsp;MB proof</div>
+    <section class="section">
+      <div class="steps">
+        <div class="step rv d1"><b>01 · LOOK UP</b><p>Type a name. Your node answers whether anyone holds it — nobody else learns you asked.</p></div>
+        <div class="step rv d2"><b>02 · CLAIM</b><p>Your wallet shows the price in dollars before you confirm. A name nobody holds is first come, first served.</p></div>
+        <div class="step rv d3"><b>03 · GET PAID</b><p>Share @yourname. Every payment lands privately; nobody can list what you received.</p></div>
       </div>
     </section>
+    <section class="section">
+      <div class="section-head rv"><div><span class="kick">On the chain</span><h2>Recently claimed</h2>
+        <p>Newest first, from your node’s copy of the directory.</p></div></div>
+      <div id="names-recent"><div class="loading">Reading the chain’s directory…</div></div>
+    </section>`;
 
-    <section class="card">
-      <div class="card-header"><h2>Market status</h2>
-        <span class="badge ${live ? 'badge-success' : 'badge-warning'}">${live ? 'live' : 'daemon unreachable'}</span>
-      </div>
-      <div class="kv-table">
-        <dt>State</dt>
-        <dd>${live
-            ? (isEmpty
-                ? 'Open — the username-IMT is at its empty root (no handle registered yet). First-claim-wins.'
-                : `${esc(fmtNum(claimed))} handle${claimed === 1 ? '' : 's'} registered. Each is a hiding commitment — ordering, names, and owners stay concealed.`)
-            : 'The proof-bearing daemon did not answer (it may be syncing or under load). The market rule is enforced on chain regardless; refresh shortly.'}</dd>
-        <dt>Current root</dt>
-        <dd class="mono copyable" title="${esc(rootHex)}">${esc(rootHex || '—')}</dd>
-        <dt>Empty root</dt>
-        <dd class="mono" title="${esc(emptyHex)}">${esc(emptyHex ? emptyHex.slice(0, 18) + '…' : '—')}</dd>
-        <dt>Tree</dt>
-        <dd>Indexed Merkle tree (depth ${esc(depth)}), threaded root-to-root on every
-            registration and transfer. Append-only by construction — <strong>no growth on any
-            axis</strong>: per-block work is O(1) and the on-chain footprint is one constant root,
-            never a per-name list.</dd>
-      </div>
-    </section>
+  const form = view.querySelector('#name-form');
+  const input = view.querySelector('#name-input');
+  const out = view.querySelector('#name-result');
+  const recent = view.querySelector('#names-recent');
 
-    <section class="card">
-      <div class="card-header"><h2>What's concealed — and what's public</h2></div>
-      <div class="privacy-grid">
-        <div class="privacy-col">
-          <h3><span class="privacy-pill concealed">concealed</span></h3>
-          <ul class="privacy-list">
-            <li><strong>The name</strong> — cleartext <code>@handle</code> is a witness only;
-              the chain sees the hiding commitment <code>uname_cm = Poseidon2(DS_USERNAME‖name‖owner_pk)</code>,
-              never the name.</li>
-            <li><strong>The owner</strong> — the owner's PQ public key stays inside the proof.
-              No <code>name → owner</code> or <code>owner → names</code> mapping exists on chain.</li>
-            <li><strong>Who is buying / selling</strong> — a transfer proves the old owner
-              authorized it (a fresh nullifier from their spend secret) without revealing either party.</li>
-            <li><strong>Registration order / linkage</strong> — leaves are opaque commitments;
-              you cannot tell two handles apart, link a transfer to a registration, or build a "rich list".</li>
-          </ul>
-        </div>
-        <div class="privacy-col">
-          <h3><span class="privacy-pill public">public</span></h3>
-          <ul class="privacy-list">
-            <li><strong>That the market is live</strong> — the threaded IMT root and the
-              count of claimed commitments are public (this page).</li>
-            <li><strong>Each registration / transfer carrier</strong> — a value-less
-              <code>DOMAIN_PQ_USERNAME</code> / <code>DOMAIN_PQ_USERNAME_TRANSFER</code> tx is on chain,
-              exposing only <code>root_old → root_new</code>, the hiding <code>uname_cm</code>, and (for a transfer)
-              an anti-replay nullifier.</li>
-            <li><strong>The ZK consensus rule</strong> — every carrier is re-verified at block-add;
-              a stale root, a replayed nullifier, or a tampered proof is rejected (fail-closed on the
-              bad item only, never the chain's progress).</li>
-            <li><strong>Soundness</strong> — first-claim-wins (register proves the name is unclaimed),
-              and a transfer needs <em>both-party authorization</em> in one atomic proof.</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-header"><h2>How it works</h2></div>
-      <div class="kv-table">
-        <dt>Register</dt>
-        <dd>A wallet builds a value-less <code>DOMAIN_PQ_USERNAME</code> carrier that proves the
-            name is unclaimed and inserts <code>uname_cm</code> into the username-IMT
-            (<code>root_old → root_new</code>). The name and owner key stay witness.</dd>
-        <dt>Transfer / trade</dt>
-        <dd>A single <code>DOMAIN_PQ_USERNAME_TRANSFER</code> proof shows membership of the current
-            <code>(name, old&nbsp;owner)</code> leaf, the old owner's authorization (a fresh nullifier),
-            and the insert of the new <code>(name, new&nbsp;owner)</code> leaf — an <strong>atomic
-            rebind</strong> with no race-prone revoke/re-register window.</dd>
-        <dt>Pay by @handle</dt>
-        <dd>Sending to <code>@handle</code> resolves to the recipient's current stealth address
-            at send time over an onion-routed lookup; the daemon never learns which handle you paid.</dd>
-        <dt>Proof size</dt>
-        <dd>Each carrier is decider-compressed to a constant <strong>≤1.8&nbsp;MB</strong> post-quantum
-            ZK proof — verify-once-discard, no chain bloat.</dd>
-      </div>
-      <p style="margin-top:14px;color:var(--text-secondary);font-size:13px">
-        Claim a handle from the wallet's Send/Receive screen — <code>register_username</code> builds the
-        carrier, the daemon dry-run-validates it, and your wallet relays it. Ownership is the on-chain
-        note, not any server.</p>
-    </section>
-
-    <p style="margin:18px 0 0;color:var(--text-muted);font-size:12px">
-      Source: <code class="mono">/get_pq_username_tree</code> on the proof-bearing daemon
-      (decentralized multi-RPC failover). The leaves are hiding commitments — the explorer
-      receives them but can extract no name or owner from them.
-    </p>
-  `;
-
-  // Wire copy-to-clipboard on the root (matches the rest of the explorer's .copyable affordance).
-  if (H && typeof H.wireCopyables === 'function') {
-    try { H.wireCopyables(view); } catch (_) { /* non-fatal */ }
+  const reachable = await ds.nodeReachable();
+  if (!reachable) {
+    recent.innerHTML = connectPanel();
+    form.addEventListener('submit', (e) => { e.preventDefault(); out.innerHTML = connectPanel(); });
+    return;
   }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = chain.canonName(input.value);
+    if (location.hash !== '#/names/' + encodeURIComponent(name)) history.replaceState(null, '', '#/names/' + encodeURIComponent(name));
+    lookup(ds, out, name);
+  });
+  if (initial) lookup(ds, out, chain.canonName(initial));
+
+  try {
+    const r = await chain.recentNames(36);
+    recent.innerHTML = r.items.length ? `<div class="listing-grid">${r.items.map((n, i) => `
+      <a class="listing rv d${(i % 4) + 1}" href="#/names/${encodeURIComponent(n.name)}">
+        <div class="name-handle">@${esc(n.name)}</div>
+        <div class="row"><span class="len">${n.name.length} char${n.name.length === 1 ? '' : 's'}</span>
+          <span class="muted" style="font-size:13px">${n.handedOver ? 'changed hands' : 'claimed'}</span></div>
+      </a>`).join('')}</div>` : `<div class="empty-state"><div class="empty-state-title">No names claimed yet</div><p class="muted">Be the first: look one up above.</p></div>`;
+  } catch (e) {
+    recent.innerHTML = `<div class="error-box"><strong>Your node did not serve its directory</strong>${esc(e.message)}</div>`;
+  }
+}
+
+async function lookup(ds, out, name) {
+  if (!NAME_OK.exec(name)) {
+    out.innerHTML = `<div class="name-result taken"><div><div class="name-handle">@${esc(name || '…')}</div>
+      <div class="name-state">A name is 1 to 32 characters: letters a–z, digits, and <code>_ . -</code></div></div></div>`;
+    return;
+  }
+  out.innerHTML = `<div class="name-result"><div class="name-handle">@${esc(name)}</div><div class="loading" style="padding:8px 0">Asking your node…</div></div>`;
+  let holder;
+  try {
+    holder = await chain.resolveName(name);
+  } catch (e) {
+    out.innerHTML = `<div class="error-box"><strong>Your node did not answer</strong>${esc(e.message)}</div>`;
+    return;
+  }
+  if (holder) {
+    out.innerHTML = `<div class="name-result taken">
+      <div><div class="name-handle">@${esc(name)}</div>
+        <div class="name-state"><span class="badge badge-warning">Taken</span> Someone holds this name. You can pay it from your wallet.</div></div>
+      <div class="name-actions"><a class="btn btn-ghost btn-sm" href="#/names">Try another name</a></div></div>`;
+    return;
+  }
+  const inWallet = !!(window.monerousd && typeof window.monerousd.dirRegister === 'function');
+  out.innerHTML = `<div class="name-result free">
+    <div><div class="name-handle">@${esc(name)}</div>
+      <div class="name-state"><span class="badge badge-success">Available</span> Nobody holds it. First to claim it gets it.</div></div>
+    <div class="name-price"><b>About $10</b><span>the wallet’s yearly name fee plus a few cents of chain fee for the bytes every node keeps — shown exactly, in dollars, before you confirm</span></div>
+    <div class="name-actions">
+      ${inWallet ? '<button class="btn btn-primary" id="claim-btn">Claim @' + esc(name) + '</button>'
+        : '<span class="muted">Open this page in your wallet (Apps → Explorer) to claim it in one tap.</span>'}
+    </div></div>`;
+  const btn = out.querySelector('#claim-btn');
+  if (btn) btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Confirm in your wallet…';
+    try {
+      const r = await window.monerousd.dirRegister({ key: name });
+      if (r && r.ok && r.result === 'PENDING') {
+        btn.textContent = 'Sent — waiting for a block';
+        toast('@' + name + ' is on its way to the chain. It is yours once a block carries it.');
+        waitForName(name, out, btn);
+      } else if (r && r.result === 'UPDATED') {
+        btn.textContent = '@' + name + ' is already yours';
+      } else {
+        btn.disabled = false; btn.textContent = 'Claim @' + name;
+        toast(r && r.result === 'TAKEN' ? 'Someone claimed @' + name + ' first. You were not charged.' : 'The wallet did not send it.');
+      }
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Claim @' + name;
+      toast(String(e.message || e).replace(/^USER_DECLINED: /, ''));
+    }
+  });
+}
+
+// Confirmation poll: one resolve on this machine's node every 900 ms until the chain holds the name.
+function waitForName(name, out, btn) {
+  let ticks = 0;
+  const poll = setInterval(async () => {
+    if (!out.isConnected || ++ticks > 400) { clearInterval(poll); return; }
+    if (await chain.resolveName(name).catch(() => null)) {
+      clearInterval(poll);
+      btn.textContent = '@' + name + ' is yours';
+      btn.classList.remove('btn-primary');
+      toast('@' + name + ' is on the chain.');
+    }
+  }, 900);
 }

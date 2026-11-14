@@ -5,135 +5,88 @@
 // zero-knowledge confidential-value protocol. It is NOT part of the Monero Project. Licensed under
 // the Apache License, Version 2.0; see the LICENSE and NOTICE files at the repository root.
 
-// pages/tokens.js — /tokens
-//
-// Token registry browser. The inline search bar in this page was
-// removed in favor of the global header search (which has a live
-// dropdown). The /tokens page now focuses on its single job:
-// surface every registered token on chain in one scannable table.
-// Verified tokens float to the top, gold-checked.
-//
-// Optional hash-query `?search=foo` is still honored so deep-links
-// like `#/tokens?search=Sats` work.
+// pages/tokens.js — the chain's tokens: the two native assets, then every token launched on the testnet, newest first,
+// read from the directory the chain keeps. A token with a pool shows its clearing price (published once a batch) and
+// its supply (public in its mint). Never a holder, a balance or a pool's depth.
 
-import {
-  escapeHtml, formatAmount, badgeHtml, isVerified, shortAddr,
-  goldCheckHTML,
-} from '../lib/helpers.js';
-import { VERIFIED_TOKENS, WRAPPED_ASSETS, logoUrlFor } from '../lib/registries.js';
+import * as chain from '../lib/chain.js';
+import { NATIVE_ASSETS } from '../lib/registries.js';
+import { escapeHtml as esc, goldCheckHTML, isCloneAttempt, sanitizeHtml } from '../lib/helpers.js';
+import { pageHead, connectPanel, logoBox, fmtPrice, fmtSupply } from './common.js';
 
 export async function renderTokens({ ds, view }) {
-  // Optional `?search=` deep-link support.
-  const hashQuery = (location.hash.split('?')[1] || '');
-  const params = new URLSearchParams(hashQuery);
-  const search = (params.get('search') || '').trim();
-
-  let tokens = [];
-  let errorMsg = null;
-  try {
-    const r = await ds.getTokens();
-    tokens = Array.isArray(r) ? r : (r.tokens || r.items || []);
-  } catch (e) {
-    errorMsg = e?.message || String(e);
-  }
-
-  // Apply ?search filter (substring on symbol OR name).
-  if (search) {
-    const needle = search.toLowerCase();
-    tokens = tokens.filter(t => {
-      const sym = (t.symbol_public || t.symbol || '').toLowerCase();
-      const nam = (t.name_public || t.name || '').toLowerCase();
-      return sym.includes(needle) || nam.includes(needle);
-    });
-  }
-
-  // Verified-first sort. Names of every verified asset stay
-  // pre-sorted by the order in lib/registries.js to keep USDm
-  // and wrappers grouped naturally.
-  const verified = [];
-  const community = [];
-  tokens.forEach(t => {
-    const sym = t.symbol_public || t.symbol || '';
-    (isVerified(sym) ? verified : community).push(t);
-  });
-
-  // If the federated indexer is offline OR returned an empty list,
-  // fall back to the static registries so the page is never empty.
-  // The user still sees USDm + every wrapped asset with logos.
-  let usingFallback = false;
-  let sorted = verified.concat(community);
-  if (!sorted.length && !search) {
-    usingFallback = true;
-    sorted = [
-      ...VERIFIED_TOKENS.map(t => ({ ...t, _fromRegistry: true })),
-      ...WRAPPED_ASSETS.map(t => ({ ...t, _fromRegistry: true, _wrapped: true })),
-    ];
-  }
-
-  view.innerHTML = `
-    <header class="hero" style="padding:26px 28px">
-      <span class="hero-eyebrow">Token registry</span>
-      <h1 style="font-size:1.6rem">Every token on MoneroUSD</h1>
-      <p>USDm + bridged wrappers + community-issued assets. Verified entries are gold-checked
-        and surfaced first; clones of verified names are blocked at the registry layer.
-        Use the header search to jump to a specific symbol, tokenId, or hash.</p>
-    </header>
-
-    ${errorMsg && !sorted.length ? `<div class="error-box"><strong>Indexer error</strong><p>${escapeHtml(errorMsg)}</p></div>` : ''}
-
-    <section class="card">
-      <div class="card-header">
-        <h2>${sorted.length.toLocaleString('en-US')} ${search ? 'matching' : 'registered'} token${sorted.length === 1 ? '' : 's'}</h2>
-        <div class="card-action">${usingFallback ? 'Showing verified registry (indexer offline)' : 'Live from indexer'}</div>
-      </div>
-
-      ${sorted.length ? `
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th></th>
-              <th>Name</th>
-              <th>Symbol</th>
-              <th>Address</th>
-              <th>Supply rule</th>
-              <th class="num">Max supply</th>
-              <th>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${sorted.map(t => {
-              const sym = t.symbol_public || t.symbol || '?';
-              const name = t.name_public || t.name || 'Unknown';
-              const tid = t.token_id || t.tokenId || t.addr || '';
-              const supplyRule = t.supply_rule || t.supplyRule || 'fixed';
-              const maxSupply = t.max_supply || t.maxSupply || '0';
-              const createdBlock = t.creation_block || t.createdBlock || 0;
-              const verifiedRow = isVerified(sym) || t._fromRegistry;
-              const logo = verifiedRow ? logoUrlFor({ symbol: sym, tokenId: tid }) : null;
-              return `
-                <tr>
-                  <td style="width:36px">
-                    <div class="entity-logo" style="width:26px;height:26px;font-size:11px">
-                      ${logo ? `<img src="${escapeHtml(logo)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml((sym||'?').slice(0,2).toUpperCase())}'}))">` : `<span>${escapeHtml((sym||'?').slice(0,2).toUpperCase())}</span>`}
-                    </div>
-                  </td>
-                  <td>
-                    <a href="#/token/${encodeURIComponent(tid || sym)}">${escapeHtml(name)}</a>
-                    ${verifiedRow ? goldCheckHTML() : ''}
-                  </td>
-                  <td class="mono">${escapeHtml(sym)}</td>
-                  <td class="mono" style="font-size:12px;color:var(--text-muted)" title="${escapeHtml(tid)}" data-copy="${escapeHtml(tid)}">${escapeHtml(shortAddr(tid))}</td>
-                  <td><span class="badge badge-supply-${escapeHtml(supplyRule)}">${escapeHtml(supplyRule)}</span></td>
-                  <td class="num">${maxSupply === '0' || maxSupply === 0 ? 'Unlimited' : escapeHtml(formatAmount(maxSupply))}</td>
-                  <td>${createdBlock > 0 ? `<a href="#/block/${createdBlock}">${Number(createdBlock).toLocaleString('en-US')}</a>` : '—'}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-      ` : `<div class="empty">No tokens registered yet${search ? ` matching <code>${escapeHtml(search)}</code>` : ''}.</div>`}
+  view.innerHTML = pageHead('Tokens', 'Every token on the chain',
+    'The native dollar and SAT, and every token launched on the testnet — read from the directory the chain keeps. Holders and balances stay private.') + `
+    <section class="section">
+      <div class="section-head rv"><div><span class="kick">Native</span><h2>Built into the chain</h2></div></div>
+      <div class="explore-grid">${NATIVE_ASSETS.map(nativeCard).join('')}</div>
     </section>
-  `;
+    <section class="section">
+      <div class="section-head rv"><div><span class="kick">Launched</span><h2>Tokens on the testnet</h2>
+        <p>Newest first. A launched token never gets the gold check; one that copies USDm or SAT is flagged.</p></div></div>
+      <div id="tok-body"><div class="loading">Reading the chain’s directory…</div></div>
+    </section>`;
+
+  const body = view.querySelector('#tok-body');
+  if (!(await ds.nodeReachable())) { body.innerHTML = connectPanel(); return; }
+
+  let prices = new Map();
+  try {
+    const p = await chain.pools();
+    for (const row of p.items) prices.set(row.token, row);
+  } catch (_) { /* tokens still list without prices */ }
+
+  const grid = document.createElement('div');
+  grid.className = 'explore-grid';
+  body.innerHTML = '';
+  body.appendChild(grid);
+  const more = document.createElement('div');
+  more.style.marginTop = '18px';
+  body.appendChild(more);
+
+  let cursor = null, shown = 0;
+  async function load() {
+    more.innerHTML = '<div class="loading">Reading…</div>';
+    let r;
+    try { r = await chain.recentAssets('token', 24, cursor); }
+    catch (e) { more.innerHTML = `<div class="error-box"><strong>The node did not answer</strong>${esc(e.message)}</div>`; return; }
+    cursor = r.cursor;
+    for (const t of r.items) {
+      grid.insertAdjacentHTML('beforeend', sanitizeHtml(tokenCard(t, prices.get(t.id))));
+      shown++;
+      if (t.hasPic) chain.assetArt(t.id).then(url => paintArt(grid, t.id, url));
+    }
+    if (!shown) more.innerHTML = '<div class="empty-state"><div class="empty-state-title">No tokens launched yet</div><p class="muted">Launch one on IonSwap and it appears here as soon as a block carries it.</p></div>';
+    else if (cursor != null) {
+      more.innerHTML = '<button class="btn btn-ghost" id="tok-more">Load older tokens</button>';
+      more.querySelector('#tok-more').addEventListener('click', load);
+    } else more.innerHTML = `<p class="muted">${shown} token${shown === 1 ? '' : 's'} — that is every token on the chain.</p>`;
+  }
+  await load();
+}
+
+function paintArt(root, id, url) {
+  if (!url) return;
+  const box = root.querySelector(`[data-art="${id}"]`);
+  if (box) box.innerHTML = `<img src="${url}" alt="">`;
+}
+
+function nativeCard(a) {
+  return `<a class="entity-card rv" href="#/token/${encodeURIComponent(a.symbol)}">
+    <div class="entity-head">${logoBox(a.logoUrl, a.symbol, true)}
+      <div><div class="entity-title">${esc(a.name)} ${goldCheckHTML()}</div><div class="entity-sub">${esc(a.symbol)} · native</div></div></div>
+    <p class="entity-body">${esc(a.description)}</p><span class="go">Open →</span></a>`;
+}
+
+function tokenCard(t, pool) {
+  const clone = isCloneAttempt(t.symbol);
+  return `<a class="entity-card" href="#/token/${encodeURIComponent(t.id)}">
+    <div class="entity-head"><div class="entity-logo round" data-art="${esc(t.id)}"><span>${esc((t.symbol || '?').slice(0, 2).toUpperCase())}</span></div>
+      <div><div class="entity-title">${esc(t.name || t.symbol)} ${clone ? '<span class="badge badge-warning">copies a native ticker</span>' : ''}</div>
+        <div class="entity-sub">${esc(t.symbol)} · ${esc(t.id.slice(0, 10))}…</div></div></div>
+    <div class="entity-meta">
+      ${pool ? `<span class="badge badge-info">${esc(fmtPrice(pool.price_e12))} USDm</span>` : '<span class="badge badge-muted">no pool yet</span>'}
+      ${pool && pool.supply != null ? `<span class="badge badge-muted">supply ${esc(fmtSupply(pool.supply))}</span>` : ''}
+      ${pool && pool.lock ? `<span class="badge ${pool.lock.status === 'locked' ? 'badge-success' : 'badge-warning'}">liquidity ${esc(pool.lock.status)}</span>` : ''}
+    </div><span class="go">Open →</span></a>`;
 }

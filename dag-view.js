@@ -34,14 +34,26 @@
     window.addEventListener('message', function(ev){
       if(ev.source!==f.contentWindow) return;                      /* the realm we framed, nobody else */
       var d=ev.data; if(!d||d.t!=='dagview:feed') return;
-      fetch('/api/explorer/dag-recent',{signal:AbortSignal.timeout(7000)})
-        .then(function(r){ if(!r.ok) throw new Error('feed '+r.status); return r.json(); })
-        .then(function(j){ f.contentWindow.postMessage({t:'dagview:blocks', id:d.id, blocks:Array.isArray(j.blocks)?j.blocks:[]}, '*'); })
+      feed()
+        .then(function(blocks){ f.contentWindow.postMessage({t:'dagview:blocks', id:d.id, blocks:blocks}, '*'); })
         .catch(function(e){ f.contentWindow.postMessage({t:'dagview:blocks', id:d.id, error:String(e&&e.message||e)}, '*'); });
     });
     var c=document.createElement('button'); c.id='ev-dagclose'; c.type='button'; c.textContent='✕  Close DAG view';
     c.addEventListener('click', function(){ showDag(false); });
     document.body.appendChild(o); document.body.appendChild(c);
+  }
+  /* The node's recent DAG, from wherever this page can read a node: the node's own app server (same origin), the
+     wallet's node, then this machine's node (or the reader's override) — the same order every explorer read uses. */
+  function blocksOf(j){ if(j && Array.isArray(j.blocks)) return j.blocks; throw new Error('the node served no DAG'); }
+  function feed(){
+    var tries=[
+      function(){ return fetch('/api/explorer/dag-recent',{signal:AbortSignal.timeout(7000)}).then(function(r){ if(!r.ok) throw new Error('feed '+r.status); return r.json(); }).then(blocksOf); },
+      function(){ var p=window.monerousd; if(!p||typeof p.nodeRpc!=='function') throw new Error('no wallet'); return p.nodeRpc('/dag_recent','').then(blocksOf); }
+    ];
+    var bases='http://127.0.0.1:27780';
+    try{ bases=localStorage.getItem('daemon_rpcs_testnet')||bases; }catch(e){}
+    bases.split(',').forEach(function(b){ b=b.trim().replace(/\/+$/,''); if(b) tries.push(function(){ return fetch(b+'/dag_recent',{signal:AbortSignal.timeout(7000)}).then(function(r){ if(!r.ok) throw new Error('feed '+r.status); return r.json(); }).then(blocksOf); }); });
+    return tries.reduce(function(acc,t){ return acc.catch(function(){ return Promise.resolve().then(t); }); }, Promise.reject(new Error('start')));
   }
   function showDag(on){
     buildOverlay();

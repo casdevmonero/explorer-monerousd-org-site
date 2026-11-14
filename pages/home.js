@@ -5,388 +5,293 @@
 // zero-knowledge confidential-value protocol. It is NOT part of the Monero Project. Licensed under
 // the Apache License, Version 2.0; see the LICENSE and NOTICE files at the repository root.
 
-// pages/home.js — Phantom-style hero + live network stats +
-// recent blocks + pager (Older/Newer).
+// pages/home.js — the explorer's front page: the live hero (block-DAG backdrop, measured chain figures), the recent
+// blocks right under it (refreshing while the page is open), the explore grid and the live-DAG view.
 //
-// The hero stat tiles surface chain-derived facts only (height,
-// difficulty, hashrate, pool tx count). No address-balance lookups
-// — that would violate the privacy stance.
-//
-// "Older blocks" button bug fix (was broken in legacy explorer):
-// the pager now has an explicit `data-older-top` attribute that
-// stores the next page's top height, and an event handler bound
-// every render (not relying on a one-shot global hashchange).
+// Every figure is read from the reader's own node and is MEASURED there: height, final height, the block time over
+// the node's recent DAG window, the tips at the frontier and the peers. Protocol constants are labelled as targets,
+// never shown as measurements. With no node to read, the page says so and shows how to connect one.
 
 import { timeAgo } from '../lib/data-source.js';
-import { VERIFIED_TOKENS, VERIFIED_ORGS } from '../lib/registries.js';
-import { sanitizeHtml } from '../lib/helpers.js';
+import { BRIDGE_COINS } from '../lib/registries.js';
+import { sanitizeHtml, escapeHtml } from '../lib/helpers.js';
 
-const RECENT_BLOCK_PAGE_SIZE = 12;
+const PAGE_SIZE = 12;
+const REFRESH_MS = 8000;
+const anim = () => window.USDM_ANIM || { startDag: () => ({ pulse() {} }), countTo: (el, v) => { if (el) el.textContent = v; } };
 
-function fmtH(n) {
-  if (n == null || isNaN(n)) return '—';
-  n = Number(n);
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + ' GH/s';
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + ' MH/s';
-  if (n >= 1e3) return (n / 1e3).toFixed(2) + ' KH/s';
-  return n.toFixed(0) + ' H/s';
-}
-function fmtD(n) {
-  if (n == null) return '—';
-  n = Number(n);
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + ' G';
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + ' M';
-  if (n >= 1e3) return (n / 1e3).toFixed(2) + ' K';
-  return n.toFixed(0);
-}
+const ICON = {
+  tokens: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a1.75 1.75 0 010 3.5H9.5a1.75 1.75 0 000 3.5H15"/></svg>',
+  nfts: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.6"/><path d="M3 16l5-5 4 4 3-3 6 6"/></svg>',
+  names: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 006 0v-1a10 10 0 10-4 8"/></svg>',
+  bridge: '<svg viewBox="0 0 24 24"><path d="M3 17h18M5 17V9a7 7 0 0114 0v8M9 17v-5M15 17v-5"/></svg>',
+  validators: '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
+  sites: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg>',
+  orgs: '<svg viewBox="0 0 24 24"><path d="M3 21V5a2 2 0 012-2h6v18M11 21V11h8a2 2 0 012 2v8M7 7h1M7 11h1M7 15h1M15 15h2"/></svg>',
+  privacy: '<svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>',
+  settle: '<svg viewBox="0 0 24 24"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg>',
+};
 
-function heroHTML(info) {
-  // HONEST PUBLIC-DA metrics only (user 2026-08-25: the ledger must be honest). Every figure is a
-  // param-derived or consensus-public fact — height (blue score), PoUW proof-rate, the cover
-  // CAPACITY and SHAPE named as the constants they are (never dressed as measured throughput or a
-  // per-block tx count), and the DAG width. Identical whether the chain is idle or saturated.
-  const height  = Number(info?.height || 0);
-  const proving = info?.proving_power;
-  const tps     = info?.tps;
-  const txpb    = info?.tx_per_block != null ? info.tx_per_block : 256;
-  const width   = info?.dag_width;
+function heroHTML() {
   return `
-    <header class="hero" aria-labelledby="hero-heading">
+    <header class="hero home-hero">
       <canvas id="hero-dag" class="hero-dag-canvas" aria-hidden="true"></canvas>
-      <span class="hero-eyebrow">MoneroUSD chain · post-quantum · privacy-first</span>
-      <h1 id="hero-heading">Sovereign block explorer</h1>
-      <p>Every proof verified. Every identity concealed. Search tokens, NFTs, contracts, organizations
-         and sovereign sites — chain-anchored, no operator can lie.
-         <a href="#/privacy">What's concealed →</a></p>
-      <div class="hero-cta-row">
-        <a class="hero-cta hero-cta-primary" href="#/tokens">Browse tokens</a>
-        <a class="hero-cta hero-cta-ghost" href="#/privacy">Privacy model</a>
-      </div>
-      <div class="hero-pills">
-        <span class="hero-pill"><span class="hero-pill-dot"></span>Hidden amounts &amp; parties</span>
-        <span class="hero-pill"><span class="hero-pill-dot"></span>ML-KEM · ML-DSA · WHIR</span>
-        <span class="hero-pill"><span class="hero-pill-dot"></span>GHOSTDAG block-DAG</span>
-        <span class="hero-pill"><span class="hero-pill-dot"></span>Zero metadata leaks</span>
-      </div>
-      <div class="hero-stats">
-        <div class="hero-stat">
-          <div class="hero-stat-label">Block height</div>
-          <div class="hero-stat-value">${height.toLocaleString('en-US')}</div>
-          <div class="hero-stat-sub">GHOSTDAG blue score</div>
+      <div class="container">
+        <span class="live-pill" id="hero-live"><i></i><span id="hero-live-text">Testnet · connecting to your node</span></span>
+        <h1>Every block, in the open. <span class="or">Every payment, private.</span></h1>
+        <p class="lead">The MoneroUSD block explorer reads the chain from your own node. You see the block-DAG, the proofs,
+          the tokens, NFTs and @names people chose to publish — never an amount, a sender or a receiver.</p>
+        <div class="hero-cta-row">
+          <a class="hero-cta hero-cta-primary" href="#/names">Find a @name</a>
+          <a class="hero-cta hero-cta-ghost" href="#/tokens">Browse tokens</a>
+          <a class="hero-cta hero-cta-ghost" href="#" id="hero-dag-open">Watch the live DAG</a>
         </div>
-        <div class="hero-stat">
-          <div class="hero-stat-label">Total proving power</div>
-          <div class="hero-stat-value">${fmtH(proving)}</div>
-          <div class="hero-stat-sub">PoUW proof-rate</div>
+        <div class="hero-pills">
+          <span class="hero-pill"><span class="hero-pill-dot"></span>Hidden amounts &amp; parties</span>
+          <span class="hero-pill"><span class="hero-pill-dot"></span>ML-KEM · ML-DSA · WHIR</span>
+          <span class="hero-pill"><span class="hero-pill-dot"></span>GHOSTDAG block-DAG</span>
+          <span class="hero-pill"><span class="hero-pill-dot"></span>No metadata leaks</span>
         </div>
-        <div class="hero-stat">
-          <div class="hero-stat-label">Cover capacity</div>
-          <div class="hero-stat-value">${fmtD(tps)}</div>
-          <div class="hero-stat-sub">slots/s · constant</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-stat-label">Cover shape</div>
-          <div class="hero-stat-value">${txpb}</div>
-          <div class="hero-stat-sub">slots/block · volume concealed</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-stat-label">DAG width</div>
-          <div class="hero-stat-value">${width != null ? width : '—'}</div>
-          <div class="hero-stat-sub">parallel blocks</div>
+        <div class="hero-stats" id="hero-stats">
+          ${stat('height', 'Block height', 'blue score')}
+          ${stat('final', 'Final height', 'settled, no reorg past it')}
+          ${stat('btime', 'Block time', 'measured · target 0.5 s')}
+          ${stat('tips', 'Open tips', 'blocks at the frontier now')}
+          ${stat('peers', 'Peers', 'onion-only links')}
         </div>
       </div>
-    </header>
-  `;
+    </header>`;
 }
 
-function quickRowsHTML() {
-  const tokens   = VERIFIED_TOKENS.length;
-  const orgs     = VERIFIED_ORGS.length;
+function stat(key, label, sub) {
+  return `<div class="hero-stat" data-stat="${key}"><div class="hero-stat-label">${label}</div>
+    <div class="hero-stat-value" id="st-${key}"><span class="skel" style="width:70%;height:26px;margin-top:4px"></span></div>
+    <div class="hero-stat-sub" id="st-${key}-sub">${sub}</div></div>`;
+}
+
+function connectHTML() {
   return `
-    <section class="card interactive rv">
+    <section class="connect rv">
+      <div>
+        <span class="kick">No node connected</span>
+        <h2>This explorer reads the chain from <span class="or">your own node</span>.</h2>
+        <p>There is no MoneroUSD server to ask. A node answers only its own wallet and the pages it serves itself, so a
+          public copy of this page cannot read anyone's node. Open the explorer one of these ways and every block,
+          token and @name below fills in live.</p>
+      </div>
+      <ol>
+        <li><span><strong>In the wallet:</strong> open Apps → Explorer. It reads the wallet's own node.</span></li>
+        <li><span><strong>From your node:</strong> run a node and open <code>http://127.0.0.1:27752/explorer-monerousd-org/</code>.</span></li>
+        <li><span><strong>New here?</strong> <a href="https://monerousd.org/testnet">Join the testnet</a> — the wallet sets up its node for you.</span></li>
+      </ol>
+    </section>`;
+}
+
+function blocksCardHTML() {
+  return `
+    <section class="card flush rv" id="blocks-card">
       <div class="card-header">
-        <h2>Browse on-chain entities</h2>
+        <h2>Recent blocks</h2>
+        <div class="card-action" id="blocks-action" title="Refresh now">Updating live</div>
       </div>
-      <div class="entity-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))">
-        <a class="entity-card" href="#/tokens">
-          <div class="entity-head">
-            <div class="entity-logo">T</div>
-            <div><div class="entity-title">Tokens</div><div class="entity-sub">${tokens + ' verified'}</div></div>
-          </div>
-          <p class="entity-body">USDm and protocol-issued assets — auto-curated registry plus the live indexer feed.</p>
-        </a>
-        <a class="entity-card" href="#/validators">
-          <div class="entity-head">
-            <div class="entity-logo">B</div>
-            <div><div class="entity-title">Bridge</div><div class="entity-sub">native swaps</div></div>
-          </div>
-          <p class="entity-body">Native cross-chain swaps — BTC, XMR, ETH, ZEC, SOL direct to USDm. No wrapped tokens, like THORChain.</p>
-        </a>
-        <a class="entity-card" href="#/nfts">
-          <div class="entity-head">
-            <div class="entity-logo">N</div>
-            <div><div class="entity-title">NFT collections</div><div class="entity-sub">browse</div></div>
-          </div>
-          <p class="entity-body">Privacy-preserving NFTs minted on chain — collection metadata, mint events, transfers.</p>
-        </a>
-        <a class="entity-card" href="#/contracts">
-          <div class="entity-head">
-            <div class="entity-logo">C</div>
-            <div><div class="entity-title">Dark Contracts</div><div class="entity-sub">DSOL bytecode</div></div>
-          </div>
-          <p class="entity-body">All DC_DEPLOY contracts — codeHash, ABI, recent calls. Bytecode is public; argv encrypted.</p>
-        </a>
-        <a class="entity-card" href="#/orgs">
-          <div class="entity-head">
-            <div class="entity-logo">O</div>
-            <div><div class="entity-title">Organizations</div><div class="entity-sub">${orgs + ' verified'}</div></div>
-          </div>
-          <p class="entity-body">Verified organizations and their full footprint: tokens, contracts, sites, contributions.</p>
-        </a>
-        <a class="entity-card" href="#/sites">
-          <div class="entity-head">
-            <div class="entity-logo">S</div>
-            <div><div class="entity-title">Sovereign sites</div><div class="entity-sub">SITE_PUBLISH</div></div>
-          </div>
-          <p class="entity-body">Chain-anchored static sites — every publish strengthens the reserve.</p>
-        </a>
-        <a class="entity-card" href="#/validators">
-          <div class="entity-head">
-            <div class="entity-logo">V</div>
-            <div><div class="entity-title">Validators</div><div class="entity-sub">bonded set</div></div>
-          </div>
-          <p class="entity-body">Bonded validators backing the FROST bridge — bond size, slash log, signal record.</p>
-        </a>
-        <a class="entity-card" href="#/privacy">
-          <div class="entity-head">
-            <div class="entity-logo">P</div>
-            <div><div class="entity-title">Privacy primer</div><div class="entity-sub">what's concealed?</div></div>
-          </div>
-          <p class="entity-body">Side-by-side: what's CONCEALED on MoneroUSD vs what's PUBLIC. Built for trust.</p>
-        </a>
-      </div>
-    </section>
-  `;
+      <div id="blocks-body">${skeletonRows()}</div>
+    </section>`;
 }
 
-function blocksTableHTML(blocks) {
-  if (!blocks.length) return '<div class="empty">No blocks loaded yet.</div>';
-  return `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Height</th>
-            <th>Time</th>
-            <th>Block ID</th>
-            <th class="num">Cover</th>
-            <th class="num">Difficulty</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${blocks.map(b => {
-            const h      = b.block_header || b;
-            const height = Number(h.height ?? 0);
-            const ts     = Number(h.timestamp || 0);
-            const diff   = h.difficulty == null ? null : Number(h.difficulty);
-            const realId = h.real_id || null;
-            const idCell = realId
-              ? `<span class="mono" title="${realId}">${realId.slice(0, 16)}…</span>`
-              : `<span class="muted" title="beyond this node's O(1) retention — the DA keeps the record; this node keeps no per-block history">—</span>`;
-            return `<tr>
-              <td><a href="#/block/${encodeURIComponent(height)}">${height.toLocaleString('en-US')}</a></td>
-              <td>${ts ? timeAgo(ts) : '<span class="muted">—</span>'}</td>
-              <td>${idCell}</td>
-              <td class="num">256</td>
-              <td class="num">${diff == null ? '<span class="muted">—</span>' : fmtD(diff)}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
+function skeletonRows() {
+  return `<div class="table-wrap"><table><tbody>${Array.from({ length: 6 }, () =>
+    `<tr><td><span class="skel" style="width:80px"></span></td><td><span class="skel" style="width:60px"></span></td><td><span class="skel" style="width:240px"></span></td><td><span class="skel" style="width:40px"></span></td></tr>`).join('')}</tbody></table></div>`;
 }
 
-function pagerHTML(currentTop, tip) {
-  const tipTop       = Math.max(0, tip - 1);
-  const newerDisabled = currentTop >= tipTop;
-  const older        = currentTop - RECENT_BLOCK_PAGE_SIZE;
-  const olderDisabled = older < 0;
-  const newerTop     = Math.min(tipTop, currentTop + RECENT_BLOCK_PAGE_SIZE);
-  const bottom = Math.max(0, currentTop - RECENT_BLOCK_PAGE_SIZE + 1);
+function exploreHTML() {
+  const coins = BRIDGE_COINS.map(c => `<img src="${c.logoUrl}" alt="${c.symbol}" title="${c.name}" width="22" height="22" style="width:22px;height:22px">`).join('');
+  const card = (href, icon, title, sub, body, extra = '', d = '') => `
+    <a class="entity-card rv ${d}" href="${href}">
+      <div class="entity-head"><div class="entity-logo">${icon}</div>
+        <div><div class="entity-title">${title}</div><div class="entity-sub">${sub}</div></div></div>
+      <p class="entity-body">${body}</p>${extra}
+      <span class="go">Open →</span>
+    </a>`;
   return `
-    <div class="pager">
-      <button class="btn btn-ghost btn-sm" id="newer-btn"
-              data-newer-top="${newerTop}" ${newerDisabled ? 'disabled' : ''}>
-        ← Newer
-      </button>
-      <span class="pager-info">Blocks ${bottom.toLocaleString('en-US')} – ${currentTop.toLocaleString('en-US')}</span>
-      <button class="btn btn-primary btn-sm" id="older-btn"
-              data-older-top="${older}" ${olderDisabled ? 'disabled' : ''}>
-        Older →
-      </button>
-    </div>
-  `;
+    <section class="section">
+      <div class="section-head rv">
+        <div><span class="kick">Explore</span><h2>Everything the chain makes public</h2>
+          <p>What creators and owners chose to publish, read straight from the chain's directory.</p></div>
+      </div>
+      <div class="explore-grid">
+        ${card('#/tokens', ICON.tokens, 'Tokens', 'USDm · SAT · launched tokens', 'The native dollar and SAT, and every token launched on the testnet, with its supply and pool.', '', 'd1')}
+        ${card('#/nfts', ICON.nfts, 'NFTs', 'collections · pieces', 'Collections and pieces, with the art the chain itself keeps for them.', '', 'd2')}
+        ${card('#/names', ICON.names, '@names', 'claim · buy · sell', 'Look up any @name, see what it costs, claim it or buy one that is for sale.', '', 'd3')}
+        ${card('https://ion.monerousd.org', ICON.bridge, 'Bridge', 'native swaps', 'BTC, XMR, ETH, ZEC and SOL swap straight to USDm — the real coins, held in vaults on their own chains.',
+          `<div style="display:flex;gap:6px;align-items:center">${coins}</div>`, 'd4')}
+        ${card('#/validators', ICON.validators, 'Validators', 'bonded set', 'What it costs to take over custody, from the node’s own bond figures.', '', 'd1')}
+        ${card('#/l2', ICON.settle, 'Settlements', 'PQ notes', 'Post-quantum note settlements and the roots they move — values stay hidden.', '', 'd2')}
+        ${card('#/sites', ICON.sites, 'Sovereign sites', '.mud hosting', 'Sites served from the chain, hash-checked by every node that serves them.', '', 'd3')}
+        ${card('#/orgs', ICON.orgs, 'Organizations', 'who builds it', 'The teams building on MoneroUSD and what they publish.', '', 'd4')}
+      </div>
+    </section>`;
+}
+
+function concealedHTML() {
+  return `
+    <section class="section">
+      <div class="section-head rv"><div><span class="kick">Digital cash</span><h2>What you will never see here</h2>
+        <p>An explorer on most chains is a surveillance tool. This one cannot be: the chain does not hold the data.</p></div></div>
+      <div class="privacy-grid">
+        <div class="privacy-col rv d1"><h3><span class="privacy-pill concealed">Concealed</span></h3><ul class="privacy-list">
+          <li>Every amount, sender and receiver</li><li>How many payments a block really carries — every block is padded to the same 256 slots</li>
+          <li>Which notes are spent, and by whom</li><li>Who holds a token, an NFT or a balance</li></ul></div>
+        <div class="privacy-col rv d2"><h3><span class="privacy-pill public">Public</span></h3><ul class="privacy-list">
+          <li>Blocks, their parents and their proofs</li><li>Assets, collections and @names their owners chose to publish</li>
+          <li>Each pool's clearing price once a batch</li><li>Protocol-wide totals, never per-person figures</li></ul></div>
+      </div>
+    </section>`;
+}
+
+function dagShowcaseHTML() {
+  return `
+    <section class="dag-showcase rv">
+      <canvas id="showcase-dag" aria-hidden="true"></canvas>
+      <span class="kick">Live</span>
+      <h2>Watch the block-DAG grow</h2>
+      <p>Blocks from many producers land side by side and GHOSTDAG orders them, so the chain keeps going while
+        blocks are mined in parallel. Open the 3D view to see your node's DAG as it arrives.</p>
+      <a class="btn btn-primary dag-showcase-cta" href="#" id="dag-view-toggle">Open the live DAG</a>
+    </section>`;
 }
 
 export async function renderHome(ctx) {
   const { ds, view } = ctx;
+  view.innerHTML = heroHTML() + `<div id="home-main">${blocksCardHTML()}</div>` + exploreHTML() + concealedHTML() + dagShowcaseHTML();
 
-  // Phase 1 — hero, then recent blocks right below it, then entity grid, activity, DAG showcase.
-  view.innerHTML = heroHTML({}) + `
-    <section class="card rv">
-      <div class="card-header">
-        <h2>Recent blocks</h2>
-        <div class="card-action" id="blocks-action">Loading…</div>
-      </div>
-      <div id="blocks-body"><div class="loading">Loading recent blocks…</div></div>
-    </section>
-  ` + quickRowsHTML() + `
-    <section class="card rv">
-      <div class="card-header">
-        <h2>Activity</h2>
-        <div class="card-action" id="txs-action">Loading…</div>
-      </div>
-      <div id="txs-body"><div class="loading">…</div></div>
-    </section>
-    <section class="dag-showcase rv">
-      <h2>Live DAG visualization</h2>
-      <p class="muted">Watch blocks arrive on the GHOSTDAG block-DAG in real time.
-         Every block's proof is verified — every identity concealed.</p>
-      <a class="dag-showcase-cta" href="#" id="dag-view-toggle">Open live DAG view</a>
-    </section>
-  `;
+  const A = anim();
+  const heroDag = A.startDag(view.querySelector('#hero-dag'));
+  A.startDag(view.querySelector('#showcase-dag'), { step: 96, speed: 0.02 });
 
-  // Wire DAG showcase CTA to open the live DAG overlay (injected by dag-view.js).
-  const dagToggle = view.querySelector('#dag-view-toggle');
-  if (dagToggle) {
-    dagToggle.addEventListener('click', e => {
-      e.preventDefault();
-      const dagBtn = view.querySelector('.ev-seg button[data-ev="dag"]');
-      if (dagBtn) dagBtn.click();
-    });
+  const openDag = (e) => {
+    e.preventDefault();
+    const btn = document.querySelector('.ev-seg button[data-ev="dag"]');
+    if (btn) btn.click();
+  };
+  view.querySelector('#dag-view-toggle')?.addEventListener('click', openDag);
+  view.querySelector('#hero-dag-open')?.addEventListener('click', openDag);
+
+  const live = view.querySelector('#hero-live');
+  const liveText = view.querySelector('#hero-live-text');
+  if (!(await ds.nodeReachable())) {
+    live.classList.add('off');
+    liveText.textContent = 'Testnet · no node connected';
+    for (const k of ['height', 'final', 'btime', 'tips', 'peers']) {
+      const el = view.querySelector('#st-' + k);
+      if (el) el.textContent = '—';
+    }
+    view.querySelector('#home-main').innerHTML = connectHTML();
+    for (const id of ['#dag-view-toggle', '#hero-dag-open']) {
+      const b = view.querySelector(id);
+      if (b) { b.textContent = 'Live DAG needs a node'; b.setAttribute('aria-disabled', 'true'); b.style.opacity = '.5'; b.style.pointerEvents = 'none'; }
+    }
+    return;
+  }
+  liveText.textContent = 'Testnet live · reading ' + ds.getActiveSourceLabel();
+
+  const state = { top: null, follow: true, lastTip: -1 };
+  view.querySelector('#blocks-action')?.addEventListener('click', () => { state.follow = true; state.top = null; tick(); });
+
+  async function tick() {
+    if (!view.isConnected || !document.getElementById('hero-stats')) return false;
+    let info = null;
+    try { info = await ds.callDaemon('get_info'); } catch (_) { /* this tick only */ }
+    let dag = [];
+    try { dag = await ds.dagRecent(); } catch (_) {}
+    if (info) paintStats(view, info, dag);
+    const tip = Number(info?.height || 0);
+    if (state.follow || state.top == null) state.top = Math.max(0, tip);
+    const fresh = state.lastTip >= 0 && tip > state.lastTip;
+    if (fresh) heroDag.pulse();
+    paintBlocks(view, ds, dag, state, tip, fresh ? state.lastTip : null);
+    state.lastTip = tip;
+    return true;
   }
 
-  // Wire a Refresh-on-click on the Updated header — users on slow
-  // connections want a manual retry button.
-  view.addEventListener('click', e => {
-    if (e.target.closest('#txs-action')) {
-      e.preventDefault();
-      paintActivityCard(ctx);
-    }
-    if (e.target.closest('#blocks-action')) {
-      e.preventDefault();
-      (async () => {
-        const newInfo = await ds.callDaemon('get_info').catch(() => null);
-        const newTip = Number(newInfo?.height || 0);
-        const top = Math.max(0, newTip - 1);
-        const fresh = await fetchRecentBlocks(ds, top, RECENT_BLOCK_PAGE_SIZE);
-        paintBlocks(ctx, fresh, top, newTip);
-        paintActivityCard(ctx);
-      })();
-    }
-  });
-
-  // Phase 2 — fetch get_info + paint real hero.
-  let info = {};
-  try { info = await ds.callDaemon('get_info'); } catch (_) {}
-  const heroNode = view.querySelector('.hero');
-  if (heroNode) heroNode.outerHTML = sanitizeHtml(heroHTML(info));
-
-  const tip = Number(info?.height || 0);
-  const initialTop = Math.max(0, tip - 1);
-
-  // Phase 3 — fetch the visible-window blocks (table).
-  const blocks = await fetchRecentBlocks(ds, initialTop, RECENT_BLOCK_PAGE_SIZE);
-  paintBlocks(ctx, blocks, initialTop, tip);
-
-  // Phase 4 — the activity card. There is deliberately NO transaction list to populate: every
-  // block carries the identical 256-slot cover shape and the chain refuses which-item questions,
-  // so an honest explorer states that instead of walking blocks for tx hashes.
-  paintActivityCard(ctx);
+  await tick();
+  const timer = setInterval(async () => { if (!(await tick())) clearInterval(timer); }, REFRESH_MS);
+  window.addEventListener('hashchange', () => clearInterval(timer), { once: true });
 }
 
-// Fetches N recent blocks starting at `top` (descending), then joins each header with its REAL
-// block id from the node's recent-DAG feed (blue_score is the height coordinate). A height past
-// the node's O(1) retention keeps no id and renders an honest dash — never an invented hash.
-async function fetchRecentBlocks(ds, top, count) {
-  // ONE honest source: the node's own /dag_recent feed (same-origin proxied by the sovereign
-  // serve), which carries the REAL block ids, timestamps and blue scores. The per-height RPC
-  // lane is unreachable from the wallet embed (cross-origin), and past the O(1) retention span
-  // the daemon has no per-block history anyway — rows the feed does not cover render the honest
-  // dash rather than a synthesized header.
-  let byScore = new Map();
-  try {
-    const dag = await ds.dagRecent();
-    for (const d of dag) if (!byScore.has(d.blue_score)) byScore.set(d.blue_score, d);
-  } catch (_) { /* feed unreachable — every row renders the honest dash */ }
-  const out = [];
-  for (let h = top; h > top - count && h >= 0; h--) {
-    const d = byScore.get(h);
-    if (d) {
-      out.push({ block_header: { height: h, timestamp: Number(d.ts || 0), real_id: d.id } });
-      continue;
-    }
-    try {
-      const b = await ds.getBlockByHeight(h);
-      const hh = b.block_header || b;
-      if (Number(hh.height ?? -1) === h) { out.push(b); continue; }
-    } catch (_) { /* fall through to the honest dash row */ }
-    out.push({ block_header: { height: h, timestamp: 0 } });
-  }
-  return out;
+function paintStats(view, info, dag) {
+  const A = anim();
+  const set = (k, v, fmt) => { const el = view.querySelector('#st-' + k); if (!el) return; if (v == null || !isFinite(v)) { el.textContent = '—'; return; } A.countTo(el, v, fmt); };
+  set('height', Number(info.height));
+  set('final', Number(info.finalized_height));
+  set('tips', Number(info.tips));
+  set('peers', Number(info.peers));
+  const bt = measuredBlockTime(dag);
+  set('btime', bt && bt.sec, n => (n >= 10 ? n.toFixed(0) : n.toFixed(1)) + ' s');
+  const sub = view.querySelector('#st-btime-sub');
+  if (sub) sub.textContent = bt == null ? 'not enough recent blocks' : 'over the last ' + bt.window + ' blocks · target 0.5 s';
+  view.querySelectorAll('.hero-stat').forEach(s => { s.classList.add('tick'); setTimeout(() => s.classList.remove('tick'), 900); });
 }
 
-// Paints the blocks-table + pager into #blocks-body, then wires
-// Older/Newer click handlers (re-bound on every render so the
-// pager keeps working after every page advance — this was the
-// "Older blocks button broken" bug in the legacy explorer).
-function paintBlocks(ctx, blocks, top, tip) {
-  const { ds, view } = ctx;
-  const blocksBody = view.querySelector('#blocks-body');
-  const action     = view.querySelector('#blocks-action');
-  if (action) action.textContent = `Updated ${new Date().toLocaleTimeString()}`;
-  if (!blocksBody) return;
-  blocksBody.innerHTML = sanitizeHtml(blocksTableHTML(blocks) + pagerHTML(top, tip));
+// /dag_recent stamps blocks in milliseconds.
+const secs = (ts) => Math.floor(Number(ts) / 1000);
 
-  const older = blocksBody.querySelector('#older-btn');
-  const newer = blocksBody.querySelector('#newer-btn');
-  if (older && !older.disabled) {
-    older.addEventListener('click', async () => {
-      const next = Number(older.dataset.olderTop);
-      if (!Number.isFinite(next) || next < 0) return;
-      blocksBody.innerHTML = '<div class="loading">Loading…</div>';
-      const win = await fetchRecentBlocks(ds, next, RECENT_BLOCK_PAGE_SIZE);
-      paintBlocks(ctx, win, next, tip);
-    });
+// Seconds per blue-score step across the node's recent DAG window: the time the window spans divided by the scores it
+// climbs. Measured from the blocks' own timestamps; `null` when the window holds fewer than two scores.
+function measuredBlockTime(dag) {
+  const by = new Map();
+  for (const b of dag || []) {
+    const s = Number(b.blue_score), t = Number(b.ts);
+    if (!isFinite(s) || !isFinite(t) || t <= 0) continue;
+    if (!by.has(s) || by.get(s) > t) by.set(s, t);
   }
-  if (newer && !newer.disabled) {
-    newer.addEventListener('click', async () => {
-      const next = Number(newer.dataset.newerTop);
-      if (!Number.isFinite(next)) return;
-      blocksBody.innerHTML = '<div class="loading">Loading…</div>';
-      const win = await fetchRecentBlocks(ds, next, RECENT_BLOCK_PAGE_SIZE);
-      paintBlocks(ctx, win, next, tip);
-    });
-  }
+  const scores = [...by.keys()].sort((a, b) => a - b);
+  if (scores.length < 2) return null;
+  const lo = scores[0], hi = scores[scores.length - 1];
+  const span = by.get(hi) - by.get(lo);
+  if (span <= 0) return null;
+  return { sec: span / 1000 / (hi - lo), window: hi - lo };
 }
 
-// The activity card — the honest replacement for a "recent transactions" list. This chain
-// cover-pads every block to the identical 256-slot shape and answers no which-item question, so
-// there is no tx list an explorer could truthfully show; walking blocks for tx hashes (the old
-// deep-lookback here) was asking the chain to leak the exact metadata it exists to conceal.
-function paintActivityCard(ctx) {
-  const { view } = ctx;
-  const body = view.querySelector('#txs-body');
-  const action = view.querySelector('#txs-action');
-  if (action) action.textContent = 'by construction';
+function paintBlocks(view, ds, dag, state, tip, prevTip) {
+  const body = view.querySelector('#blocks-body');
   if (!body) return;
-  body.innerHTML = `
-    <div class="empty-state">
-      <div class="empty-state-title">Concealed by design</div>
-      <p class="muted">Every block carries the identical 256-slot cover shape — which slots are
-      real, their amounts, senders and receivers never appear on the ledger. What you can verify
-      is public: block structure, proof validity, and the chain's commitments.
-      <a href="#/privacy">How the privacy model works →</a></p>
-    </div>`;
+  const byScore = new Map();
+  for (const d of dag || []) {
+    const s = Number(d.blue_score);
+    if (!byScore.has(s)) byScore.set(s, []);
+    byScore.get(s).push(d);
+  }
+  const top = state.top;
+  const rows = [];
+  for (let h = top; h > top - PAGE_SIZE && h >= 0; h--) {
+    const blocks = byScore.get(h) || [];
+    const lead = blocks.find(b => b.selected) || blocks[0];
+    const isNew = prevTip != null && h > prevTip;
+    rows.push(`<tr class="${isNew ? 'fresh' : ''}">
+      <td><span class="blk-dot"></span><a href="#/block/${h}">${h.toLocaleString('en-US')}</a></td>
+      <td>${lead && lead.ts ? escapeHtml(timeAgo(secs(lead.ts))) : '<span class="muted">—</span>'}</td>
+      <td>${lead ? `<a class="mono" href="#/block/${encodeURIComponent(lead.id)}" title="${escapeHtml(lead.id)}">${escapeHtml(lead.id.slice(0, 20))}…</a>`
+        : '<span class="muted" title="beyond this node’s recent window; the node keeps no per-block history past it">beyond the recent window</span>'}</td>
+      <td class="num">${blocks.length ? blocks.length + (blocks.length === 1 ? ' block' : ' blocks') : '—'}</td>
+      <td class="num">${lead ? (lead.parents || []).length : '—'}</td>
+    </tr>`);
+  }
+  const newestShown = top >= tip;
+  body.innerHTML = sanitizeHtml(`
+    <div class="table-wrap"><table>
+      <thead><tr><th>Height</th><th>Age</th><th>Block</th><th class="num">At this height</th><th class="num">Parents</th></tr></thead>
+      <tbody>${rows.join('')}</tbody></table></div>
+    <div class="pager">
+      <button class="btn btn-ghost btn-sm" id="newer-btn" ${newestShown ? 'disabled' : ''}>← Newer</button>
+      <span class="pager-info">Blocks ${Math.max(0, top - PAGE_SIZE + 1).toLocaleString('en-US')} – ${top.toLocaleString('en-US')}${newestShown ? ' · live' : ''}</span>
+      <button class="btn btn-ghost btn-sm" id="older-btn" ${top - PAGE_SIZE < 0 ? 'disabled' : ''}>Older →</button>
+    </div>`);
+  const action = view.querySelector('#blocks-action');
+  if (action) action.textContent = state.follow ? 'Updating live' : 'Paused · click to follow the tip';
+  body.querySelector('#older-btn')?.addEventListener('click', () => { state.follow = false; state.top = Math.max(0, top - PAGE_SIZE); paintBlocks(view, ds, dag, state, tip, null); });
+  body.querySelector('#newer-btn')?.addEventListener('click', () => {
+    state.top = Math.min(tip, top + PAGE_SIZE);
+    state.follow = state.top >= tip;
+    paintBlocks(view, ds, dag, state, tip, null);
+  });
 }

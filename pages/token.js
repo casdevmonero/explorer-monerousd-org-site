@@ -5,188 +5,80 @@
 // zero-knowledge confidential-value protocol. It is NOT part of the Monero Project. Licensed under
 // the Apache License, Version 2.0; see the LICENSE and NOTICE files at the repository root.
 
-// pages/token.js — Token detail page.
-//
-// Resolves a token from EITHER its tokenId (ion1_...) OR its
-// symbol (e.g. wBTC). The indexer's /v1/tokens/<id> handles both.
-// If the indexer is offline AND the symbol matches our verified
-// registry, we fall back to the registry entry so verified tokens
-// (USDm, every wrapper) always render — never blank.
-//
-// Verified tokens get the gold Twitter/X-style check next to their
-// name in the hero AND a "Operator-verified" pill in the Protocol
-// Details section. Clone-name attempts get a red warning instead.
+// pages/token.js — one token: a native asset by its symbol (USDm, SAT), or a launched token or NFT by its chain id,
+// with what the chain records for it (name, picture, creator id, collection, supply) and its pool's clearing price.
 
-import {
-  escapeHtml, formatAmount, VERIFIED_TOKENS, VERIFIED_BY_ADDR,
-  isVerified, isCloneAttempt, goldCheckHTML, sanitizeHtml } from '../lib/helpers.js';
-import {
-  VERIFIED_TOKENS as REG_TOKENS, WRAPPED_ASSETS, logoUrlFor,
-} from '../lib/registries.js';
+import * as chain from '../lib/chain.js';
+import { NATIVE_ASSETS } from '../lib/registries.js';
+import { escapeHtml as esc, goldCheckHTML, isCloneAttempt, sanitizeHtml } from '../lib/helpers.js';
+import { connectPanel, logoBox, fmtPrice, fmtSupply } from './common.js';
 
 export async function renderToken({ ds, view }, idOrSymbol) {
-  let token = null;
-  let errorMsg = null;
+  const native = NATIVE_ASSETS.find(a => a.symbol.toLowerCase() === String(idOrSymbol).toLowerCase());
+  if (native) { view.innerHTML = sanitizeHtml(nativeHTML(native)); return; }
 
-  try {
-    token = await ds.getToken(idOrSymbol);
-  } catch (e) {
-    errorMsg = e?.message || String(e);
-  }
-
-  // Fallback: build a registry entry if the indexer didn't return.
-  if (!token) {
-    const key = String(idOrSymbol).toLowerCase();
-    const reg = REG_TOKENS.find(t => t.symbol.toLowerCase() === key || t.tokenId === idOrSymbol)
-             || WRAPPED_ASSETS.find(w => w.symbol.toLowerCase() === key || w.tokenId === idOrSymbol);
-    if (reg) {
-      token = {
-        symbol: reg.symbol,
-        name: reg.name,
-        tokenId: reg.tokenId,
-        _registryFallback: true,
-        _issuer: reg.issuer,
-        _wrapped: !!reg.homeChain,
-        _homeChain: reg.homeChain,
-        _description: reg.description,
-      };
-      errorMsg = null;
-    }
-  }
-
-  if (!token) {
-    view.innerHTML = `
-      <div class="error-box">
-        <strong>Token not found</strong>
-        <p>${escapeHtml(errorMsg || 'No token matches <code>' + idOrSymbol + '</code> on the federated indexer.')}</p>
-      </div>
-      <div class="hint" style="margin-top:12px"><a href="#/tokens">← All tokens</a></div>
-    `;
+  if (!/^[0-9a-f]{64}$/i.test(String(idOrSymbol))) {
+    view.innerHTML = `<div class="error-box"><strong>Not a token id</strong>A launched token is named by its 64-character chain id. <a href="#/tokens">All tokens →</a></div>`;
     return;
   }
+  if (!(await ds.nodeReachable())) { view.innerHTML = connectPanel(); return; }
 
-  const sym = token.symbol_public || token.symbol || '?';
-  const name = token.name_public || token.name || 'Unknown Token';
-  const tid = token.token_id || token.tokenId || '';
-  const decimals = token.decimals != null ? token.decimals : 8;
-  const maxSupply = token.max_supply || token.maxSupply || '0';
-  const circSupply = token.circulating_supply || token.circulatingSupply || '0';
-  const supplyRule = token.supply_rule || token.supplyRule || (token._wrapped ? 'mintable' : 'fixed');
-  const bondPaid = token.bond_paid || token.bondPaid || '0';
-  const createdBlock = token.creation_block || token.createdBlock || 0;
-  const metadata = token.metadata_public || token.metadataPublic || null;
-
-  const verified = isVerified(sym) || !!(tid && VERIFIED_BY_ADDR[tid]);
-  const clone = !verified && isCloneAttempt(sym);
-  const vInfo = verified
-    ? (VERIFIED_TOKENS[sym] || VERIFIED_TOKENS[VERIFIED_BY_ADDR[tid]] || {
-        issuer: token._issuer || 'MoneroUSD',
-        verified: true,
-      })
-    : null;
-
-  const logoUrl = logoUrlFor({ symbol: sym, tokenId: tid });
-  const wrappedHomeChain = token._homeChain
-    || WRAPPED_ASSETS.find(w => w.symbol === sym)?.homeChain;
-
-  view.innerHTML = `
-    <header class="hero" style="padding:30px 32px">
-      <span class="hero-eyebrow">${escapeHtml(wrappedHomeChain ? 'Wrapped asset · ' + wrappedHomeChain : (verified ? 'Verified token' : 'On-chain token'))}</span>
-      <h1 style="font-size:1.6rem;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:6px">
-        <span class="entity-logo" style="width:52px;height:52px;font-size:18px;background:rgba(255,102,0,0.10)">
-          <img src="${escapeHtml(logoUrl)}" alt=""
-               onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml((sym||'?').slice(0,2).toUpperCase())}'}))">
-        </span>
-        <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
-          ${escapeHtml(name)}
-          ${verified ? sanitizeHtml(goldCheckHTML('xl')) : ''}
-          ${clone ? '<span class="badge badge-warning" style="font-size:11px">⚠ unofficial</span>' : ''}
-          ${token._registryFallback ? '<span class="badge badge-muted" style="font-size:11px">indexer offline · registry</span>' : ''}
-        </span>
-      </h1>
-      <p style="margin-top:8px;color:var(--text-secondary)">
-        ${token._description
-          ? escapeHtml(token._description)
-          : (verified
-              ? 'Verified on chain. The gold check is operator-curated; clone-name attempts surface a red warning instead.'
-              : (clone
-                  ? '⚠ This token shares a symbol with a verified asset but is NOT the official one. Always double-check the tokenId before transacting.'
-                  : 'Community-issued token on MoneroUSD.'))}
-      </p>
-      <div class="hero-stats">
-        <div class="hero-stat">
-          <div class="hero-stat-label">Symbol</div>
-          <div class="hero-stat-value">${escapeHtml(sym)}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-stat-label">Decimals</div>
-          <div class="hero-stat-value">${decimals}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-stat-label">Supply rule</div>
-          <div class="hero-stat-value" style="font-size:1rem;text-transform:capitalize">${escapeHtml(supplyRule)}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-stat-label">Max supply</div>
-          <div class="hero-stat-value">${maxSupply === '0' || maxSupply === 0 ? 'Unlimited' : escapeHtml(formatAmount(maxSupply))}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-stat-label">Circulating</div>
-          <div class="hero-stat-value">${escapeHtml(formatAmount(circSupply))}</div>
-        </div>
+  const id = String(idOrSymbol).toLowerCase();
+  const [a, poolR] = await Promise.all([chain.asset(id).catch(() => null), ds.nodeGet('/ion/pool', { token: id }).catch(() => null)]);
+  if (!a) {
+    view.innerHTML = `<div class="error-box"><strong>No such token on this chain</strong>Your node’s directory has no asset with id <code>${esc(id.slice(0, 16))}…</code>. <a href="#/tokens">All tokens →</a></div>`;
+    return;
+  }
+  const pool = poolR && poolR.found ? poolR.pool : null;
+  const clone = isCloneAttempt(a.symbol);
+  const supply = a.supply != null ? a.supply : (pool && pool.supply);
+  view.innerHTML = sanitizeHtml(`
+    <header class="hero rv">
+      <span class="kick">${a.kind === 'nft' ? 'NFT' : 'Token'} · launched on the testnet</span>
+      <div class="detail-head" style="margin-top:14px">
+        <div class="entity-logo round" id="tok-art" style="width:72px;height:72px;font-size:22px"><span>${esc((a.symbol || '?').slice(0, 2).toUpperCase())}</span></div>
+        <div><h1 style="margin:0">${esc(a.name || a.symbol)}</h1>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><span class="badge">${esc(a.symbol)}</span>
+          ${clone ? '<span class="badge badge-warning">copies a native ticker — not the real one</span>' : ''}
+          ${pool && pool.lock ? `<span class="badge ${pool.lock.status === 'locked' ? 'badge-success' : 'badge-warning'}">liquidity ${esc(pool.lock.status)}</span>` : ''}</div></div>
       </div>
     </header>
-
-    <section class="card">
-      <div class="card-header"><h2>Token details</h2></div>
+    <section class="stat-grid">
+      <div class="stat-tile rv d1"><div class="stat-tile-label">Price</div><div class="stat-tile-value">${pool ? esc(fmtPrice(pool.price_e12)) : '—'}</div><div class="stat-tile-sub">${pool ? 'USDm · last batch’s clearing price' : 'no pool yet'}</div></div>
+      <div class="stat-tile rv d2"><div class="stat-tile-label">Supply</div><div class="stat-tile-value">${supply != null ? esc(fmtSupply(supply)) : '—'}</div><div class="stat-tile-sub">${supply != null ? 'minted once, public in its mint' : 'not minted yet'}</div></div>
+      <div class="stat-tile rv d3"><div class="stat-tile-label">Kind</div><div class="stat-tile-value" style="font-size:20px">${a.kind === 'nft' ? 'NFT' : 'Token'}</div><div class="stat-tile-sub">${a.collection ? 'in @' + esc(a.collection) : 'no collection'}</div></div>
+    </section>
+    <section class="card rv">
+      <div class="card-header"><h2>What the chain records</h2></div>
       <dl class="kv-table">
-        <dt>Name</dt>           <dd>${escapeHtml(name)} ${verified ? goldCheckHTML() : ''}</dd>
-        <dt>Symbol</dt>         <dd class="mono">${escapeHtml(sym)}</dd>
-        <dt>Token id</dt>       <dd class="mono">${escapeHtml(tid)}</dd>
-        <dt>Decimals</dt>       <dd>${decimals}</dd>
-        <dt>Supply rule</dt>    <dd>
-          <span class="badge badge-supply-${escapeHtml(supplyRule)}">${escapeHtml(supplyRule)}</span>
-          ${supplyRule === 'fixed' ? '<span class="muted" style="margin-left:6px">— all supply minted at creation</span>' : ''}
-          ${supplyRule === 'mintable' ? '<span class="muted" style="margin-left:6px">— creator can mint more (50 bps fee per mint)</span>' : ''}
-          ${supplyRule === 'deflationary' ? '<span class="muted" style="margin-left:6px">— burn-only after creation</span>' : ''}
-        </dd>
-        <dt>Max supply</dt>     <dd class="mono">${maxSupply === '0' || maxSupply === 0 ? 'Unlimited' : escapeHtml(formatAmount(maxSupply))}</dd>
-        <dt>Circulating</dt>    <dd class="mono">${escapeHtml(formatAmount(circSupply))}</dd>
-        ${verified && vInfo ? `<dt>Issuer</dt><dd>${escapeHtml(vInfo.issuer || '')}${vInfo.org ? ` · <a href="#/org/${escapeHtml(vInfo.org)}">profile →</a>` : ''}</dd>` : ''}
-        ${wrappedHomeChain ? `<dt>Home chain</dt><dd><strong>${escapeHtml(wrappedHomeChain)}</strong></dd>` : ''}
-        <dt>Creator</dt>        <dd style="color:var(--text-muted)">Stealth creator (privacy-preserving)</dd>
-        ${createdBlock > 0 ? `<dt>Created at</dt><dd>Block <a href="#/block/${createdBlock}">${Number(createdBlock).toLocaleString('en-US')}</a></dd>` : ''}
-        ${bondPaid !== '0' && bondPaid !== 0 ? `<dt>Creation bond</dt><dd>${escapeHtml(formatAmount(bondPaid))} USDm</dd>` : ''}
+        <dt>Token id</dt><dd class="mono copyable" data-copy="${esc(a.id)}">${esc(a.id)}</dd>
+        <dt>Note tag</dt><dd class="mono">${esc(a.tag)}</dd>
+        <dt>Creator id</dt><dd class="mono">${esc(a.creator)}</dd>
+        <dt>Picture</dt><dd>${a.has_art ? 'Kept on the chain (its digest is bound into the token’s id)' : 'None on the chain'}</dd>
+        ${pool ? `<dt>Trading fee</dt><dd>${(Number(pool.fee && pool.fee.total_bps) / 100).toFixed(2)}% per trade, as the chain charges it</dd>` : ''}
       </dl>
     </section>
+    <p class="hint">Who holds it and how much stays private: notes carry the token’s tag, never an owner.
+      <a href="https://ion.monerousd.org/#/${a.kind === 'nft' ? 'market?a=' + esc(a.id) : 'token?t=' + esc(a.tag)}">${a.kind === 'nft' ? 'See it on the IonSwap market →' : 'Trade on IonSwap →'}</a></p>`);
+  if (a.has_art) chain.assetArt(id).then(url => { const box = view.querySelector('#tok-art'); if (url && box) box.innerHTML = `<img src="${url}" alt="">`; });
+}
 
-    <section class="card">
-      <div class="card-header"><h2>Protocol details</h2></div>
-      <dl class="kv-table">
-        <dt>Asset type</dt>   <dd>Protocol-native asset (FCMP++ + Seraphis privacy)</dd>
-        <dt>Privacy</dt>      <dd>Amounts · senders · recipients · asset type all <a href="#/privacy">concealed by design</a>.</dd>
-        <dt>Pool pairing</dt> <dd>Every pool pairs against USDm (v1).</dd>
-        ${verified ? `<dt>Verification</dt><dd>${goldCheckHTML()} <span style="margin-left:4px">Operator-verified — hardcoded in the protocol registry</span></dd>` : ''}
-      </dl>
-    </section>
-
-    ${metadata ? `
-      <section class="card">
-        <div class="card-header"><h2>Metadata</h2></div>
-        <dl class="kv-table">
-          <dt>Public metadata</dt><dd class="mono">${escapeHtml(typeof metadata === 'string' ? metadata : JSON.stringify(metadata))}</dd>
-        </dl>
-      </section>
-    ` : ''}
-
-    <section class="card">
-      <div class="card-header"><h2>Privacy note</h2></div>
-      <p style="margin:0;font-size:13px;color:var(--text-secondary);line-height:1.6">
-        This is a privacy chain. Holder count is not displayed —
-        individual holdings are hidden across stealth addresses. Supply
-        totals are public; individual balances are not.
-        <a href="#/privacy">Why? →</a>
-      </p>
-    </section>
-  `;
+function nativeHTML(a) {
+  return `
+    <header class="hero rv">
+      <span class="kick">Native asset</span>
+      <div class="detail-head" style="margin-top:14px">
+        ${logoBox(a.logoUrl, a.symbol, true).replace('class="entity-logo round"', 'class="entity-logo round" style="width:72px;height:72px"')}
+        <div><h1 style="margin:0;display:flex;align-items:center;gap:10px">${esc(a.name)} ${goldCheckHTML('xl')}</h1>
+          <div style="margin-top:8px"><span class="badge">${esc(a.symbol)}</span> <span class="badge badge-success">built into the chain</span></div></div>
+      </div>
+      <p style="margin-top:18px">${esc(a.description)}</p>
+    </header>
+    <section class="card rv">
+      <div class="card-header"><h2>Privacy</h2></div>
+      <p>Every ${esc(a.symbol)} note hides its amount and its owner. The chain proves that nothing was created from
+        nothing on every block, without ever learning who paid whom or how much. That is why this page shows no holders,
+        no balances and no transfers: the chain does not have them.</p>
+      <p style="margin-top:12px"><a href="#/privacy">What the chain conceals →</a></p>
+    </section>`;
 }

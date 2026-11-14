@@ -362,7 +362,7 @@ function spawnReal(b){
   const refs=(b.parents||[]).map(p=>drawn.get(p)).filter(Boolean);
   const blk=addBlock(!!b.selected, refs, Number(b.blue_score||0), b.id, 256);
   drawn.set(b.id, blk); blocksByNum.set(blk.h, blk);
-  arrivals.push(performance.now()); if(arrivals.length>200) arrivals.shift();
+  if(Number(b.ts)>0){ arrivals.push(Number(b.ts)); if(arrivals.length>200) arrivals.shift(); }   /* the block's own stamp (ms) */
   prependRow(blk);
   if(drawn.size>600){ const oldest=drawn.keys().next().value; drawn.delete(oldest); }
 }
@@ -404,11 +404,12 @@ setTimeout(()=>{ setKnob(dBtn); document.getElementById('title').style.opacity=1
 // ---- stats + animate ----
 const $=id=>document.getElementById(id);
 function stats(){
-  const now=performance.now(); while(arrivals.length && now-arrivals[0]>10000) arrivals.shift();
-  const bps=(arrivals.length/10);
+  /* blocks per second across the held blocks' own timestamps — measured by the chain, not by when this page saw them */
+  let lo=Infinity, hi=-Infinity; for(const t of arrivals){ if(t<lo) lo=t; if(t>hi) hi=t; }
+  const bps=(arrivals.length>1 && hi>lo) ? (arrivals.length-1)/((hi-lo)/1000) : 0;
   $('sHeight').textContent=height.toLocaleString(); $('sBlocks').textContent=drawn.size.toLocaleString();
   $('sBR').textContent=blueN.toLocaleString()+' / '+redN.toLocaleString();
-  $('sTps').innerHTML=bps.toFixed(1)+'<small> blk/s</small>'; }
+  $('sTps').innerHTML=(bps>0 && bps<1 ? bps.toFixed(2) : bps.toFixed(1))+'<small> blk/s</small>'; }
 setInterval(stats,400);
 
 const clock=new THREE.Clock();

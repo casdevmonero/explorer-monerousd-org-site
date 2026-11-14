@@ -30,7 +30,6 @@ import { renderPool }       from './pages/pool.js';
 import { renderContract }   from './pages/contract.js';
 import { renderContracts }  from './pages/contracts.js';
 import { renderSearch }     from './pages/search.js';
-import { renderWrapped }    from './pages/wrapped.js';
 import { renderNfts }       from './pages/nfts.js';
 import { renderOrgs }       from './pages/orgs.js';
 import { renderOrg }        from './pages/org.js';
@@ -48,9 +47,6 @@ const searchForm    = document.getElementById('search-form');
 const searchBtn     = document.getElementById('search-btn');
 const dropdown      = document.getElementById('search-dropdown');
 const loader        = document.getElementById('usdm-loader');
-const networkSwitch = document.getElementById('network-switch');
-const networkSelect = document.getElementById('network-select');
-const testnetBanner = document.getElementById('testnet-banner');
 
 // ── routes ─────────────────────────────────────────────────────────
 
@@ -64,7 +60,6 @@ const ROUTES = [
   { match: /^#\/pool\/(.+)$/,       handler: renderPool,       args: m => [decodeURIComponent(m[1])] },
   { match: /^#\/contract\/(.+)$/,   handler: renderContract,   args: m => [decodeURIComponent(m[1])] },
   { match: /^#\/contracts\/?$/,     handler: renderContracts,  args: () => [] },
-  { match: /^#\/wrapped\/?$/,       handler: renderWrapped,    args: () => [] },
   { match: /^#\/nfts\/?$/,          handler: renderNfts,       args: () => [] },
   { match: /^#\/orgs\/?$/,          handler: renderOrgs,       args: () => [] },
   { match: /^#\/org\/(.+)$/,        handler: renderOrg,        args: m => [decodeURIComponent(m[1])] },
@@ -72,7 +67,7 @@ const ROUTES = [
   { match: /^#\/site\/(.+)$/,       handler: renderSite,       args: m => [decodeURIComponent(m[1])] },
   { match: /^#\/validators\/?$/,    handler: renderValidators, args: () => [] },
   { match: /^#\/privacy\/?$/,       handler: renderPrivacy,    args: () => [] },
-  { match: /^#\/usernames\/?$/,     handler: renderUsernames,  args: () => [] },
+  { match: /^#\/(?:names|usernames)(?:\/(.*))?$/, handler: renderUsernames, args: m => [m[1] ? decodeURIComponent(m[1]) : ''] },
   { match: /^#\/l2(?:[/?].*)?$/,    handler: renderSettlements, args: () => [] },
   { match: /^#\/q\/(.+)$/,          handler: renderSearch,     args: m => [decodeURIComponent(m[1])] },
 ];
@@ -161,7 +156,6 @@ function setActiveNav(hash) {
   const map = {
     '':            ['', '/'],
     tokens:        ['tokens', 'token'],
-    wrapped:       ['wrapped'],
     nfts:          ['nfts'],
     contracts:     ['contracts', 'contract'],
     orgs:          ['orgs', 'org'],
@@ -192,63 +186,28 @@ function showLoader() { if (loader) loader.classList.remove('hidden'); }
 // ── source detection / pill ────────────────────────────────────────
 
 async function probeSource() {
-  try {
-    await ds.getBlockCount();
-    const label = ds.getActiveSourceLabel();
-    sourcePill.textContent = label;
+  const label = ds.getActiveSourceLabel();
+  if (await ds.nodeReachable()) {
+    sourcePill.textContent = 'Reading ' + label;
     sourcePill.classList.remove('connecting', 'error');
-    if (footerSource) footerSource.textContent = 'via ' + label;
-  } catch (e) {
-    sourcePill.textContent = 'unreachable';
+    if (footerSource) footerSource.textContent = 'Reading the chain from ' + label;
+  } else {
+    sourcePill.textContent = 'No node connected';
     sourcePill.classList.remove('connecting');
     sourcePill.classList.add('error');
-    if (footerSource) footerSource.textContent = 'data source unreachable';
+    if (footerSource) footerSource.textContent = 'No node connected — open this explorer in your wallet or from your node';
   }
 }
 
-// ── network switch (Mainnet / Testnet via /testnet path prefix) ─────
-//
-// Network is derived from the URL path (ds.getNetwork()), so the only
-// job here is to reflect it in the header control + banner, and to
-// turn a selection into a real navigation to the right base path.
-async function setupNetworkSwitch() {
-  // Inside the wallet, the provider's network is the truth — adopt it BEFORE painting the pill
-  // (the on-screen defect this fixes: the pill read "Mainnet" while every number on the page was
-  // live testnet data from the wallet's own node).
-  const providerNet = await ds.adoptProviderNetwork();
-  const net = ds.getNetwork();
-  const testnet = net === 'testnet';
-  if (providerNet && networkSelect) {
-    networkSelect.disabled = true;
-    if (networkSwitch) networkSwitch.title = 'Network follows your wallet';
-  }
-
-  if (networkSwitch) networkSwitch.classList.toggle('testnet', testnet);
-  if (networkSelect) {
-    networkSelect.value = net;
-    networkSelect.addEventListener('change', () => {
-      const target = networkSelect.value;
-      if (target === ds.getNetwork()) return;          // already there
-      // Full navigation to the new base path ('/' or '/testnet/'),
-      // preserving the current hash route so we land on the same page.
-      location.assign(ds.networkSwitchUrl(target));
-    });
-  }
-
-  if (testnetBanner) {
-    testnetBanner.hidden = !testnet;
-    const exit = document.getElementById('testnet-banner-exit');
-    // Make the "Back to Mainnet" link a real path navigation (the
-    // static href="#/" would only change the hash, staying on /testnet).
-    if (exit) exit.setAttribute('href', ds.networkSwitchUrl('mainnet'));
-  }
-
-  // Reflect the network in the document title so a backgrounded
-  // testnet tab is distinguishable at a glance.
-  if (testnet && !/Testnet/.test(document.title)) {
-    document.title = 'Testnet · ' + document.title;
-  }
-}
+// A logo that fails to load becomes the entity's initials. One delegated handler (an inline onerror is refused by
+// this page's own script-src 'self'); the initials come from the image's data-initials.
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.dataset || img.dataset.initials == null) return;
+  const span = document.createElement('span');
+  span.textContent = img.dataset.initials || '?';
+  img.replaceWith(span);
+}, true);
 
 // ── search dropdown ─────────────────────────────────────────────────
 
@@ -278,7 +237,7 @@ function searchResultHTML(e, idx) {
   // a kind-specific icon (tx/block/address suggestions).
   let logo;
   if (e.logo) {
-    logo = `<img src="${escape(e.logo)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escape(initialsFor(e.label))}'}))">`;
+    logo = `<img src="${escape(e.logo)}" alt="" data-initials="${escape(initialsFor(e.label))}">`;
   } else if (e.iconGlyph) {
     logo = `<span aria-hidden="true">${e.iconGlyph}</span>`;
   } else {
@@ -400,7 +359,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!e.target.closest('.search-form')) closeDropdown();
   });
 
-  setupNetworkSwitch();  // reflect Mainnet/Testnet + wire the switch
   primeIndex();  // background-load custom tokens + sites
   probeSource().finally(() => {});
   dispatch();
@@ -409,13 +367,10 @@ window.addEventListener('DOMContentLoaded', () => {
 // ── click-to-copy on .mono identifiers (kept from legacy) ──────────
 
 (function () {
+  // A link always navigates: an id that is a link (a block hash, a parent) opens its page, never copies.
   function isCopyTarget(el) {
-    if (!el) return null;
-    if (el.classList && el.classList.contains('copyable')) return el;
-    if (el.classList && el.classList.contains('mono')) {
-      if (el.closest('button, input, textarea, a[href]:not(.mono)')) return null;
-      return el;
-    }
+    if (!el || !el.closest || el.closest('a[href], button, input, textarea')) return null;
+    if (el.classList && (el.classList.contains('copyable') || el.classList.contains('mono'))) return el;
     return null;
   }
   function flashCopied(el) {
