@@ -5,75 +5,46 @@
 // zero-knowledge confidential-value protocol. It is NOT part of the Monero Project. Licensed under
 // the Apache License, Version 2.0; see the LICENSE and NOTICE files at the repository root.
 
-// address.js — /address/<stealth>
-// Shows a stealth address's recent on-chain activity via the federated
-// indexer's /v1/activity endpoint.
-import { escapeHtml, formatAmount, shortAddr, timeSince } from '../lib/helpers.js';
+// address.js — /address/<address>
+//
+// HONEST BY SOURCE (user 2026-11-15: "Make our explorer honest … actually explain what our code does"). This page used to
+// ask an indexer route (/v1/activity) for a per-address table of blocks, directions and amounts. No node serves that route,
+// and none can: an address never reaches the chain. A MoneroUSD address is base58(tag ‖ 32-byte spend tag ‖ 1,184-byte
+// ML-KEM-768 encapsulation key ‖ 4-byte Keccak-256 checksum) (monerousd-node-zkdag/src/address.rs). A sender seals each note
+// to that key, and the chain stores only the note's commitment and ciphertext (src/mempool.rs, PqTx output notes), so
+// nothing on chain names the address. A page that showed activity "for an address" would be asking a server which notes are
+// whose, exactly the which-item question digital cash refuses. So this page reads nothing: it decodes what the address
+// itself says and explains why the chain has nothing more.
+import { escapeHtml } from '../lib/helpers.js';
 
-export async function renderAddress({ ds, view }, addr) {
+const B58 = /^[1-9A-HJ-NP-Za-km-z]+$/;
+// A well-formed address is block base58 (8-byte blocks → 11 characters) over 1,224 bytes: the network tag's 4-byte varint,
+// the 32-byte spend tag, the 1,184-byte ML-KEM-768 key and the 4-byte checksum — exactly 1,683 characters (address.rs,
+// `encode_addr_matches_wallet_ground_truth`). The checksum is not re-checked here; the page shows nothing that depends on it.
+const ADDRESS_CHARS = 1683;
+
+export async function renderAddress({ view }, addr) {
+  const shape = (addr || '').length === ADDRESS_CHARS && B58.test(addr)
+    ? 'A MoneroUSD address: a 32-byte spend tag and a 1,184-byte ML-KEM-768 key, with a Keccak-256 checksum.'
+    : 'This is not the shape of a MoneroUSD address (one is 1,683 base58 characters: a network tag, a spend tag, an ML-KEM-768 key and a checksum).';
   view.innerHTML = `
     <section>
       <h2>Address</h2>
       <div class="detail-table">
         <table>
           <tbody>
-            <tr><td class="label">Stealth</td><td class="mono break-all">${escapeHtml(addr)}</td></tr>
-            <tr><td class="label">Type</td><td>Stealth (FCMP++ ring signature receiver)</td></tr>
+            <tr><td class="label">Address</td><td class="mono break-all">${escapeHtml(addr)}</td></tr>
+            <tr><td class="label">Shape</td><td>${escapeHtml(shape)}</td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="privacy-note">
-        <strong>Privacy:</strong> Stealth addresses receive into one-time per-transaction output pubkeys. No on-chain balance is computable from the address alone &mdash; only inbound activity attested via <code>ion://op/v1</code> ops is shown here.
+        <strong>Nothing on chain refers to this address.</strong> A payment to it is a note sealed to its ML-KEM-768 key:
+        the chain stores the note's commitment and ciphertext, never the address. So there is no balance, no history and no
+        list of payments to show, here or on any node. Only the holder of the address's keys can find its notes, by
+        opening them in their own wallet.
       </div>
-    </section>
-
-    <section>
-      <h3>Activity</h3>
-      <div id="activity-body"><p class="muted">Loading…</p></div>
     </section>
   `;
-
-  const el = document.getElementById('activity-body');
-  try {
-    const r = await ds.getActivity(addr);
-    const items = Array.isArray(r) ? r : (r && (r.activity || r.items || r.rows)) || [];
-    if (!items.length) {
-      el.innerHTML = '<p class="muted">No activity recorded for this address.</p>';
-      return;
-    }
-    el.innerHTML = `
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Block</th>
-              <th>Type</th>
-              <th>Asset</th>
-              <th>Amount</th>
-              <th>Tx</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${items.map(it => {
-              const dir = it.direction || it.dir || 'in';
-              const sign = dir === 'out' ? '−' : '+';
-              const cls  = dir === 'out' ? 'text-red' : 'text-green';
-              return `
-                <tr>
-                  <td>${it.block ? `<a href="#/block/${it.block}">${Number(it.block).toLocaleString()}</a>` : '—'} ${it.timestamp ? `<div class="muted" style="font-size:0.78rem">${escapeHtml(timeSince(it.timestamp))}</div>` : ''}</td>
-                  <td><span class="badge">${escapeHtml(it.type || it.eventType || '—')}</span></td>
-                  <td class="mono">${escapeHtml(it.symbol || it.asset || it.tokenId || 'USDm')}</td>
-                  <td class="${cls} mono">${sign}${escapeHtml(it.amount ? formatAmount(it.amount) : '—')}</td>
-                  <td>${it.txHash ? `<a href="#/tx/${escapeHtml(it.txHash)}" class="mono">${escapeHtml(shortAddr(it.txHash))}</a>` : '—'}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
-  } catch (e) {
-    el.innerHTML = `<p class="muted">No activity (or indexer unreachable).</p>`;
-  }
 }

@@ -40,7 +40,7 @@ const SEED_SITES = [
   {
     domain: 'ionswap.monerousd.org',
     org: 'ion-swap',
-    blurb: 'AMM + dark pool + FROST bridge + PSM converter + token launchpad.',
+    blurb: 'Swaps and pools for native assets over the bridge, the USDm converter and a token launchpad.',
     verified: true,
   },
   {
